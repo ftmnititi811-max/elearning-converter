@@ -1,0 +1,14 @@
+
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+*.mp4
+*.wav
+*.transcript.md
+*.transcript.failed.md
+
+.env
+/docs/**
+AGENTS.md
