@@ -1,9 +1,31 @@
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 
 class ConfigurationError(Exception):
     pass
+
+
+def gemini_api_key(env_path: Path | None = None) -> str | None:
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if key:
+        return key
+    path = env_path or Path(__file__).resolve().parent.parent / ".env"
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeError) as exc:
+        raise ConfigurationError(".env を読み込めません。") from exc
+    for line in lines:
+        name, separator, value = line.partition("=")
+        if separator and name.strip() == "GEMINI_API_KEY":
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                value = value[1:-1]
+            return value or None
+    return None
 
 
 @dataclass(frozen=True)

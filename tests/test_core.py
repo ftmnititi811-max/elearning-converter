@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from lecture_md.__main__ import run
 from lecture_md.article import ArticleError, generate_parts, split_segments
-from lecture_md.config import ConfigurationError, Settings, validate
+from lecture_md.config import ConfigurationError, Settings, gemini_api_key, validate
 from lecture_md.media import MediaError, extract_audio
 from lecture_md.output import OutputError, write_atomic
 from lecture_md.render import timestamp, transcript_markdown
@@ -70,9 +70,32 @@ class CoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "講義.mp4"
             source.write_bytes(b"source")
-            with patch.dict("os.environ", {}, clear=True), patch("lecture_md.__main__.extract_audio") as extractor:
+            with patch.dict("os.environ", {}, clear=True), patch("lecture_md.__main__.gemini_api_key", return_value=None), patch("lecture_md.__main__.extract_audio") as extractor:
                 self.assertEqual(run([str(source)]), 2)
                 extractor.assert_not_called()
+
+    def test_env_file_key_and_environment_precedence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env_path = Path(folder) / ".env"
+            env_path.write_text('# local setting\nGEMINI_API_KEY="file-secret"\n', encoding="utf-8")
+            with patch.dict("os.environ", {}, clear=True):
+                self.assertEqual(gemini_api_key(env_path), "file-secret")
+            with patch.dict("os.environ", {"GEMINI_API_KEY": "environment-secret"}):
+                self.assertEqual(gemini_api_key(env_path), "environment-secret")
+
+    def test_cli_uses_key_from_env_file(self):
+        part = {"summary": ["要点"], "body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "terms": [], "checks": []}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "日本語 講義.mp4"
+            source.write_bytes(b"source")
+            env_path = root / ".env"
+            env_path.write_text("GEMINI_API_KEY=file-secret\n", encoding="utf-8")
+            with patch.dict("os.environ", {}, clear=True), patch("lecture_md.__main__.gemini_api_key", side_effect=lambda: gemini_api_key(env_path)), patch("lecture_md.__main__.extract_audio"), patch("lecture_md.__main__.transcribe", return_value=[Segment(0, 2, "本文")]), patch("lecture_md.__main__.generate_parts", return_value=[part]) as generate:
+                self.assertEqual(run([str(source)]), 0)
+                self.assertEqual(generate.call_args.args[1], "file-secret")
+            article = (root / "日本語 講義.md").read_text(encoding="utf-8")
+            self.assertNotIn("file-secret", article)
 
     def test_ffprobe_no_audio_and_missing_tools(self):
         source = Path("講義.mp4")

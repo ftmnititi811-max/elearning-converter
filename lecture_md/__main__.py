@@ -1,11 +1,10 @@
 import argparse
-import os
 import sys
 import tempfile
 from pathlib import Path
 
 from .article import ArticleError, generate_parts
-from .config import ConfigurationError, Settings, validate
+from .config import ConfigurationError, Settings, gemini_api_key, validate
 from .media import MediaError, extract_audio
 from .output import OutputError, write_atomic
 from .render import article_markdown, transcript_markdown
@@ -31,8 +30,8 @@ def run(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     settings = Settings(args.input, args.output_dir or args.input.parent, args.language,
                         args.whisper_model, args.article_model, args.no_article, args.overwrite)
-    api_key = None if settings.no_article else os.environ.get("GEMINI_API_KEY")
     try:
+        api_key = None if settings.no_article else gemini_api_key()
         validate(settings, api_key)
     except ConfigurationError as exc:
         print(f"設定エラー: {exc}", file=sys.stderr)
