@@ -11,7 +11,7 @@ from lecture_md.config import ConfigurationError, Settings, gemini_api_key, vali
 from lecture_md.media import MediaError, extract_audio
 from lecture_md.output import OutputError, write_atomic
 from lecture_md.render import timestamp, transcript_markdown
-from lecture_md.transcribe import Segment, TranscriptionError
+from lecture_md.transcribe import Segment, TranscriptionError, transcribe
 
 
 class CoreTests(unittest.TestCase):
@@ -21,6 +21,22 @@ class CoreTests(unittest.TestCase):
         self.assertIn("[01:01:01] 講義内容", transcript_markdown(Path("日本語 講義.mp4"), segments))
         with self.assertRaises(TranscriptionError):
             Segment(-1, 2, "invalid")
+
+    def test_transcription_error_identifies_stage_without_exception_text(self):
+        secret = "private-source-text"
+        with patch("faster_whisper.WhisperModel", side_effect=RuntimeError(secret)):
+            with self.assertRaises(TranscriptionError) as caught:
+                transcribe(Path("audio.wav"), "ja", "small")
+        self.assertIn("モデル読み込み", str(caught.exception))
+        self.assertIn("RuntimeError", str(caught.exception))
+        self.assertNotIn(secret, str(caught.exception))
+
+        model = SimpleNamespace(transcribe=lambda *args, **kwargs: (_ for _ in ()).throw(ValueError(secret)))
+        with patch("faster_whisper.WhisperModel", return_value=model):
+            with self.assertRaises(TranscriptionError) as caught:
+                transcribe(Path("audio.wav"), "ja", "small")
+        self.assertIn("音声読み込み", str(caught.exception))
+        self.assertNotIn(secret, str(caught.exception))
 
     def test_split_keeps_timestamps(self):
         chunks = split_segments([Segment(0, 1, "あ" * 15), Segment(2, 3, "い" * 15)], limit=20)
