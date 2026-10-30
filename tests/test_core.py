@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -37,6 +38,17 @@ class CoreTests(unittest.TestCase):
                 transcribe(Path("audio.wav"), "ja", "small")
         self.assertIn("音声読み込み", str(caught.exception))
         self.assertNotIn(secret, str(caught.exception))
+
+    def test_pcm_wav_bypasses_pyav_decoder(self):
+        with tempfile.TemporaryDirectory() as folder:
+            wav_path = Path(folder) / "合成 音声.wav"
+            with wave.open(str(wav_path), "wb") as output:
+                output.setnchannels(1)
+                output.setsampwidth(2)
+                output.setframerate(16000)
+                output.writeframes(bytes(32000))
+            with self.assertRaisesRegex(TranscriptionError, "文字起こし結果が空です"):
+                transcribe(wav_path, "ja", "small")
 
     def test_split_keeps_timestamps(self):
         chunks = split_segments([Segment(0, 1, "あ" * 15), Segment(2, 3, "い" * 15)], limit=20)

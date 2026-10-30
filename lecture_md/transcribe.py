@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from math import isfinite
 from pathlib import Path
+import wave
 
 
 class TranscriptionError(Exception):
@@ -25,6 +26,7 @@ class Segment:
 def transcribe(wav_path: Path, language: str, model_name: str) -> list[Segment]:
     try:
         from faster_whisper import WhisperModel
+        import numpy as np
     except Exception as exc:
         raise TranscriptionError(f"文字起こしのライブラリ読み込みに失敗しました（{type(exc).__name__}）。") from exc
     try:
@@ -32,9 +34,16 @@ def transcribe(wav_path: Path, language: str, model_name: str) -> list[Segment]:
     except Exception as exc:
         raise TranscriptionError(f"文字起こしのモデル読み込みに失敗しました（{type(exc).__name__}）。") from exc
     try:
-        raw, _ = model.transcribe(str(wav_path), language=language, beam_size=5)
+        with wave.open(str(wav_path), "rb") as source:
+            if (source.getnchannels(), source.getsampwidth(), source.getframerate(), source.getcomptype()) != (1, 2, 16000, "NONE"):
+                raise ValueError("unexpected WAV format")
+            samples = np.frombuffer(source.readframes(source.getnframes()), dtype="<i2").astype(np.float32) / 32768.0
     except Exception as exc:
         raise TranscriptionError(f"文字起こしの音声読み込みに失敗しました（{type(exc).__name__}）。") from exc
+    try:
+        raw, _ = model.transcribe(samples, language=language, beam_size=5)
+    except Exception as exc:
+        raise TranscriptionError(f"文字起こしの認識準備に失敗しました（{type(exc).__name__}）。") from exc
     try:
         segments = [Segment(float(item.start), float(item.end), item.text.strip()) for item in raw if item.text.strip()]
     except TranscriptionError:
