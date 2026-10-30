@@ -31,11 +31,13 @@ python -m lecture_md "C:\講義 資料\授業.mp4" --output-dir "C:\復習 ノ�
 
 通常モードは `<stem>.md` と `<stem>.transcript.md` をUTF-8で保存します。`--no-article` は原文だけを保存し、キーは不要です。既存出力を置換する場合だけ `--overwrite` を付けます。記事化失敗時は、可能なら `<stem>.transcript.failed.md` に原文を救済して終了コード1で終了します。既存の救済ファイルも `--overwrite` なしでは置換しません。
 
-オプション: `--language`（既定 `ja`）、`--whisper-model`（既定 `small`、CPU/int8）、`--article-model`（既定 `gemini-2.5-flash`）、`--output-dir`、`--no-article`、`--overwrite`。`python -m lecture_md --help` でも確認できます。終了コードは成功0、入力・設定不備2、処理失敗1です。
+オプション: `--language`（既定 `ja`）、`--whisper-model`（既定 `small`、CPU/int8）、`--article-model`（既定 `gemini-3.5-flash-lite`）、`--output-dir`、`--no-article`、`--overwrite`。`python -m lecture_md --help` でも確認できます。終了コードは成功0、入力・設定不備2、処理失敗1です。
 
 ## 送信・費用・権利
 
 Gemini APIには、文字起こしテキストを約12,000文字ごとの時刻境界で分割して送ります。分割数だけAPIリクエストが発生し、従量課金やクォータ消費の可能性があります。**料金上限はCLIで設定しません。** 利用前に使用モデルの料金・クォータを確認してください。通信なしで使う場合は `--no-article` を指定します。
+
+既定モデル `gemini-3.5-flash-lite` の料金と利用条件は [Gemini API公式料金表](https://ai.google.dev/gemini-api/docs/pricing) と [モデル仕様](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite) で確認してください。モデルを変える場合は `--article-model MODEL` を指定します。
 
 教材の加工・外部送信・共有が利用条件と著作権上許されているか確認してください。機密情報や個人情報を含む可能性がある場合、Geminiへ送る前に内容を確認してください。記事は自動生成した下書きです。専門語、数式、重要な断定は原音声と時刻付き原文で照合してください。キーや文字起こし本文をCLIログには表示しません。
 

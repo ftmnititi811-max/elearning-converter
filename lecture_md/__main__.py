@@ -20,7 +20,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--output-dir", type=Path, help="出力先（既定: MP4と同じフォルダ）")
     result.add_argument("--language", default="ja", help="認識言語（既定: ja）")
     result.add_argument("--whisper-model", default="small", help="faster-whisperモデル（既定: small）")
-    result.add_argument("--article-model", default="gemini-2.5-flash", help="Geminiモデル（既定: gemini-2.5-flash）")
+    result.add_argument("--article-model", default="gemini-3.5-flash-lite", help="Geminiモデル（既定: gemini-3.5-flash-lite）")
     result.add_argument("--no-article", action="store_true", help="APIを使わず時刻付き原文のみ保存")
     result.add_argument("--overwrite", action="store_true", help="既存出力を置換")
     return result

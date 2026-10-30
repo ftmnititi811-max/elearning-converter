@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from lecture_md.__main__ import run
+from lecture_md.__main__ import parser, run
 from lecture_md.article import ArticleError, generate_parts, split_segments
 from lecture_md.config import ConfigurationError, Settings, gemini_api_key, validate
 from lecture_md.media import MediaError, extract_audio
@@ -17,6 +17,10 @@ from lecture_md.transcribe import Segment, TranscriptionError, transcribe
 
 
 class CoreTests(unittest.TestCase):
+    def test_article_model_default_and_override(self):
+        self.assertEqual(parser().parse_args(["講義.mp4"]).article_model, "gemini-3.5-flash-lite")
+        self.assertEqual(parser().parse_args(["講義.mp4", "--article-model", "custom-model"]).article_model, "custom-model")
+
     def test_segments_and_markdown(self):
         segments = [Segment(3661.5, 3664, "講義内容")]
         self.assertEqual(timestamp(3661.5), "01:01:01")
