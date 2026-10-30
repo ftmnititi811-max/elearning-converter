@@ -1,6 +1,7 @@
 import json
 import re
 import time
+import httpx
 from collections.abc import Callable
 from .render import timestamp
 from .transcribe import Segment
@@ -12,6 +13,18 @@ class ArticleError(Exception):
 
 LIMIT = 12_000
 TIME_RE = re.compile(r"^\d{2,}:\d{2}:\d{2}$")
+
+
+def _api_failure(exc: Exception) -> tuple[str, bool]:
+    code = getattr(exc, "code", None)
+    code = code if type(code) is int and 100 <= code <= 599 else None
+    name = type(exc).__name__
+    name = name if re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]{0,79}", name) else "Exception"
+    detail = f"HTTP {code}、{name}" if code is not None else name
+    retryable = code in (408, 429) or (code is not None and 500 <= code <= 599)
+    if code is None:
+        retryable = isinstance(exc, (TimeoutError, ConnectionError, httpx.TransportError))
+    return detail, retryable
 
 
 def split_segments(segments: list[Segment], limit: int = LIMIT) -> list[str]:
@@ -86,8 +99,9 @@ def generate_parts(segments: list[Segment], api_key: str, model_name: str,
                 )
                 break
             except Exception as exc:
-                if attempt == 2:
-                    raise ArticleError("Gemini APIの呼び出しに失敗しました。") from exc
+                detail, retryable = _api_failure(exc)
+                if not retryable or attempt == 2:
+                    raise ArticleError(f"Gemini APIの呼び出しに失敗しました（{detail}）。") from exc
                 pause(2 ** attempt)
         try:
             content = response.text

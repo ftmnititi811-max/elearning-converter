@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 import wave
+from google.genai import errors
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -79,7 +80,7 @@ class CoreTests(unittest.TestCase):
         def generate_content(**kwargs):
             calls.append(kwargs)
             if len(calls) == 1:
-                raise RuntimeError("temporary")
+                raise TimeoutError("temporary")
             return SimpleNamespace(text=json.dumps(payload))
 
         factory = lambda **kwargs: SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
@@ -88,6 +89,41 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertIn("本文", calls[0]["contents"])
         self.assertNotIn("secret", calls[0]["contents"])
+
+    def test_api_failure_status_and_retry_are_safe(self):
+        calls = []
+        secret = "secret-key-and-lecture-text"
+        def forbidden(**kwargs):
+            calls.append(kwargs)
+            raise errors.ClientError(403, {"error": {"message": secret}})
+        factory = lambda **kwargs: SimpleNamespace(models=SimpleNamespace(generate_content=forbidden))
+        with self.assertRaises(ArticleError) as caught:
+            generate_parts([Segment(0, 1, "本文")], "secret", "model", client_factory=factory, pause=lambda _: None)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("HTTP 403、ClientError", str(caught.exception))
+        self.assertNotIn(secret, str(caught.exception))
+
+        calls.clear()
+        def exhausted(**kwargs):
+            calls.append(kwargs)
+            raise errors.ClientError(429, {"error": {"message": secret}})
+        factory = lambda **kwargs: SimpleNamespace(models=SimpleNamespace(generate_content=exhausted))
+        with self.assertRaises(ArticleError) as caught:
+            generate_parts([Segment(0, 1, "本文")], "secret", "model", client_factory=factory, pause=lambda _: None)
+        self.assertEqual(len(calls), 3)
+        self.assertIn("HTTP 429、ClientError", str(caught.exception))
+        self.assertNotIn(secret, str(caught.exception))
+
+        calls.clear()
+        def unavailable(**kwargs):
+            calls.append(kwargs)
+            raise errors.ServerError(503, {"error": {"message": secret}})
+        factory = lambda **kwargs: SimpleNamespace(models=SimpleNamespace(generate_content=unavailable))
+        with self.assertRaises(ArticleError) as caught:
+            generate_parts([Segment(0, 1, "本文")], "secret", "model", client_factory=factory, pause=lambda _: None)
+        self.assertEqual(len(calls), 3)
+        self.assertIn("HTTP 503、ServerError", str(caught.exception))
+        self.assertNotIn(secret, str(caught.exception))
 
     def test_bad_api_response_is_rejected(self):
         factory = lambda **kwargs: SimpleNamespace(models=SimpleNamespace(generate_content=lambda **kw: SimpleNamespace(text="{}")))
