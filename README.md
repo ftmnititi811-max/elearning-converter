@@ -1,6 +1,11 @@
-# lecture-md
+# elearning-converter
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
+## 機能
 
 利用権限のあるMP4講義の**音声のみ**を、Windows上で復習用Markdownに変換するCLIです。FFmpegで音声を一時WAVへ抽出し、faster-whisperでローカル文字起こしを行います。通常モードでは、**時刻付き文字起こしテキストのみ**をGemini APIへ送って記事化します。MP4・WAVはAPIに送信しません。
+
 
 ## 導入（Windows 11、Python 3.11以降）
 
@@ -18,20 +23,23 @@ python -m pip install -e .
 
 ## 実行
 
+短縮コマンドは `elconv`（e-learning converter）です。仮想環境を有効にして使用します。`python -m elearning_converter` でも同じ処理を実行できます。
+
 ```powershell
 # APIを使わず、時刻付き原文のみ
-python -m lecture_md "C:\講義 資料\授業.mp4" --no-article
+elconv "C:\講義 資料\授業.mp4" --no-article
 
 # 記事と原文を生成。キーは環境変数で渡します
 $env:GEMINI_API_KEY = "取得したキー"
-python -m lecture_md "C:\講義 資料\授業.mp4" --output-dir "C:\復習 ノート"
+elconv "C:\講義 資料\授業.mp4" --output-dir "C:\復習 ノート"
 ```
 
 [.env.example](.env.example) にキーの記入形式を示しています。プロジェクトルートの `.env` に `GEMINI_API_KEY=取得したキー` と書くと、CLIが自動で読み込みます。環境変数が設定されている場合はそちらを優先します。実際の `.env` はGitの管理対象から除外されています。
 
 通常モードは `<stem>.md` と `<stem>.transcript.md` をUTF-8で保存します。`--no-article` は原文だけを保存し、キーは不要です。既存出力を置換する場合だけ `--overwrite` を付けます。記事化失敗時は、可能なら `<stem>.transcript.failed.md` に原文を救済して終了コード1で終了します。既存の救済ファイルも `--overwrite` なしでは置換しません。
 
-オプション: `--language`（既定 `ja`）、`--whisper-model`（既定 `small`、CPU/int8）、`--article-model`（既定 `gemini-3.5-flash-lite`）、`--output-dir`、`--no-article`、`--overwrite`。`python -m lecture_md --help` でも確認できます。終了コードは成功0、入力・設定不備2、処理失敗1です。
+オプション: `--language`（既定 `ja`）、`--whisper-model`（既定 `small`、CPU/int8）、`--article-model`（既定 `gemini-3.5-flash-lite`）、`--output-dir`、`--no-article`、`--overwrite`。`elconv --help` でも確認できます。終了コードは成功0、入力・設定不備2、処理失敗1です。
+
 
 ## 送信・費用・権利
 
