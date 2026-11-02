@@ -1,6 +1,15 @@
-# lecture-md
+# elearning-converter
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
+## 機能
 
 利用権限のあるMP4講義の**音声のみ**を、Windows上で復習用Markdownに変換するCLIです。FFmpegで音声を一時WAVへ抽出し、faster-whisperでローカル文字起こしを行います。通常モードでは、**時刻付き文字起こしテキストのみ**をGemini APIへ送って記事化します。MP4・WAVはAPIに送信しません。
+
+出力は講義の流れに沿う授業ノートです。用語を本文中で説明し、理解に必要な前提・理由・具体例を残します。「講義では〜紹介された」などの前置きや重複を省き、見出し・表は整理に役立つ場合だけ使用します。段落末などの不要な句読点を減らし、意味の区切りに必要な句読点は保持します。固定の要点・用語一覧は作りません。本文には根拠時刻を付け、不明点がある場合は末尾の「原文で確認する箇所」にまとめます。
+
+架空の内容を使った[出力例](docs/note-example.md)と[要件](docs/requirements.md)を参照できます。
+
 
 ## 導入（Windows 11、Python 3.11以降）
 
@@ -18,24 +27,35 @@ python -m pip install -e .
 
 ## 実行
 
+短縮コマンドは `elconv`（e-learning converter）です。仮想環境を有効にして使用します。`python -m elearning_converter` でも同じ処理を実行できます。
+
 ```powershell
 # APIを使わず、時刻付き原文のみ
-python -m lecture_md "C:\講義 資料\授業.mp4" --no-article
+elconv "C:\講義 資料\授業.mp4" --no-article
 
 # 記事と原文を生成。キーは環境変数で渡します
 $env:GEMINI_API_KEY = "取得したキー"
-python -m lecture_md "C:\講義 資料\授業.mp4" --output-dir "C:\復習 ノート"
+elconv "C:\講義 資料\授業.mp4" --output-dir "C:\復習 ノート"
 ```
 
 [.env.example](.env.example) にキーの記入形式を示しています。プロジェクトルートの `.env` に `GEMINI_API_KEY=取得したキー` と書くと、CLIが自動で読み込みます。環境変数が設定されている場合はそちらを優先します。実際の `.env` はGitの管理対象から除外されています。
 
 通常モードは `<stem>.md` と `<stem>.transcript.md` をUTF-8で保存します。`--no-article` は原文だけを保存し、キーは不要です。既存出力を置換する場合だけ `--overwrite` を付けます。記事化失敗時は、可能なら `<stem>.transcript.failed.md` に原文を救済して終了コード1で終了します。既存の救済ファイルも `--overwrite` なしでは置換しません。
 
-オプション: `--language`（既定 `ja`）、`--whisper-model`（既定 `small`、CPU/int8）、`--article-model`（既定 `gemini-3.5-flash-lite`）、`--output-dir`、`--no-article`、`--overwrite`。`python -m lecture_md --help` でも確認できます。終了コードは成功0、入力・設定不備2、処理失敗1です。
+オプション: `--language`（既定 `ja`）、`--whisper-model`（既定 `small`、CPU/int8）、`--article-model`（既定 `gemini-3.5-flash-lite`）、`--output-dir`、`--no-article`、`--overwrite`。`elconv --help` でも確認できます。終了コードは成功0、入力・設定不備2、処理失敗1です。
+
+## ノートの書き方を調整する
+
+[prompts/article.md](prompts/article.md)をUTF-8で編集すると、次の記事化から反映されます。ファイルは記事化開始時に一度読み込み、各分割へ同じ指示を付けます。別の作業ディレクトリから起動しても、プロジェクト直下のファイルを参照します。JSONのbody・checksとbody内のheading・text・timestampの指定、および末尾の「文字起こし:」を維持してください。
+
+ファイルが欠落・読取不能・不正なUTF-8・空白のみの場合はAPIを呼ばずに記事化を失敗させ、時刻付き原文を救済します。`--no-article`ではプロンプトを読みません。現状はリポジトリを手元に置くeditable install（`pip install -e .`）を対象とし、wheelだけの配布には対応していません。
+
 
 ## 送信・費用・権利
 
 Gemini APIには、文字起こしテキストを約12,000文字ごとの時刻境界で分割して送ります。分割数だけAPIリクエストが発生し、従量課金やクォータ消費の可能性があります。**料金上限はCLIで設定しません。** 利用前に使用モデルの料金・クォータを確認してください。通信なしで使う場合は `--no-article` を指定します。
+
+分割結果はローカルで結合し、ノート全体をまとめ直すAPIは呼びません。プロンプトの長さと生成文量に応じてトークン使用量・料金は変動します。
 
 既定モデル `gemini-3.5-flash-lite` の料金と利用条件は [Gemini API公式料金表](https://ai.google.dev/gemini-api/docs/pricing) と [モデル仕様](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite) で確認してください。モデルを変える場合は `--article-model MODEL` を指定します。
 
@@ -48,6 +68,18 @@ Gemini APIには、文字起こしテキストを約12,000文字ごとの時刻�
 - `文字起こし結果が空です`: 音声が聞こえるMP4か確認します。無音や短すぎる音声は失敗します。
 - `既存出力があります`: 別の出力先を選ぶか、更新を意図する場合のみ `--overwrite` を付けます。
 - Gemini障害・形式不正: 記事は完成名で保存されません。救済原文がある場合はそこから内容を確認できます。
+
+記事応答にはAPI設定でもJSON Schemaを指定し、受信後も構造を検証します（[Gemini公式の構造化出力](https://ai.google.dev/gemini-api/docs/generate-content/structured-output)）。応答が失敗した場合は分割番号と理由を表示します。本文やAPIの生のエラーメッセージは表示・保存しません。
+
+| 表示 | 意味 |
+| --- | --- |
+| `finish_reason=MAX_TOKENS` | 出力上限で生成が打ち切られた。不完全な記事は採用しない |
+| `block_reason=...` / `finish_reason=SAFETY`など | API側の入力ブロック・生成停止 |
+| 記事応答が空 | 本文テキストが返っていない |
+| JSONが構文不正、行・列 | JSONを解析できない。本文断片は表示しない |
+| 記事形式が不正、固定の項目名 | 必須項目・型・時刻形式が合っていない |
+
+形式不正の自動再送信は行いません。再発時は分割番号と理由のメッセージで切り分けできます。以前の「記事応答が空か形式不正」だけの記録からは、どの条件だったかを確定できません。
 
 ## 開発・検証
 

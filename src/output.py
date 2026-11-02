@@ -10,7 +10,7 @@ class OutputError(Exception):
 def write_atomic(path: Path, content: str, overwrite: bool) -> None:
     temporary: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", suffix=".tmp", prefix=".lecture-md-", dir=path.parent, delete=False) as stream:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", suffix=".tmp", prefix=".elearning-converter-", dir=path.parent, delete=False) as stream:
             temporary = Path(stream.name)
             stream.write(content)
             stream.flush()

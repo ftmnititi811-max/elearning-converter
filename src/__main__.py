@@ -13,8 +13,8 @@ from .transcribe import TranscriptionError, transcribe
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
-        prog="python -m lecture_md",
-        description="許可済みMP4の音声を復習用Markdownへ変換します。記事化時は文字起こしテキストをGemini APIへ送信し、従量課金の可能性があります。",
+        prog="elconv",
+        description="elearning-converter: 許可済みMP4の音声を復習用Markdownへ変換します。記事化時は文字起こしテキストをGemini APIへ送信し、従量課金の可能性があります。",
     )
     result.add_argument("input", type=Path, metavar="INPUT.mp4")
     result.add_argument("--output-dir", type=Path, help="出力先（既定: MP4と同じフォルダ）")
@@ -38,7 +38,7 @@ def run(argv: list[str] | None = None) -> int:
         return 2
     print("音声を検査・抽出しています。", file=sys.stderr)
     try:
-        with tempfile.TemporaryDirectory(prefix="lecture-md-") as folder:
+        with tempfile.TemporaryDirectory(prefix="elearning-converter-") as folder:
             wav_path = Path(folder) / "audio.wav"
             extract_audio(settings.input_path, wav_path)
             print("文字起こしをしています。", file=sys.stderr)

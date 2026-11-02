@@ -7,13 +7,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from lecture_md.__main__ import parser, run
-from lecture_md.article import ArticleError, generate_parts, split_segments
-from lecture_md.config import ConfigurationError, Settings, gemini_api_key, validate
-from lecture_md.media import MediaError, extract_audio
-from lecture_md.output import OutputError, write_atomic
-from lecture_md.render import timestamp, transcript_markdown
-from lecture_md.transcribe import Segment, TranscriptionError, transcribe
+from elearning_converter.__main__ import parser, run
+from elearning_converter.article import ArticleError, generate_parts, split_segments
+from elearning_converter.config import ConfigurationError, Settings, gemini_api_key, validate
+from elearning_converter.media import MediaError, extract_audio
+from elearning_converter.output import OutputError, write_atomic
+from elearning_converter.render import timestamp, transcript_markdown
+from elearning_converter.transcribe import Segment, TranscriptionError, transcribe
 
 
 class CoreTests(unittest.TestCase):
@@ -52,8 +52,10 @@ class CoreTests(unittest.TestCase):
                 output.setsampwidth(2)
                 output.setframerate(16000)
                 output.writeframes(bytes(32000))
-            with self.assertRaisesRegex(TranscriptionError, "文字起こし結果が空です"):
-                transcribe(wav_path, "ja", "small")
+            model = SimpleNamespace(transcribe=lambda samples, **kwargs: ([], None))
+            with patch("faster_whisper.WhisperModel", return_value=model), patch("faster_whisper.audio.decode_audio", side_effect=AssertionError("PyAV must not be used")):
+                with self.assertRaisesRegex(TranscriptionError, "文字起こし結果が空です"):
+                    transcribe(wav_path, "ja", "small")
 
     def test_split_keeps_timestamps(self):
         chunks = split_segments([Segment(0, 1, "あ" * 15), Segment(2, 3, "い" * 15)], limit=20)
@@ -78,7 +80,7 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(output.read_text(encoding="utf-8"), "new")
 
     def test_gemini_request_retries_without_key_in_text(self):
-        payload = {"summary": ["要点"], "body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "terms": [], "checks": []}
+        payload = {"body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "checks": []}
         calls = []
 
         def generate_content(**kwargs):
@@ -138,7 +140,7 @@ class CoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "講義.mp4"
             source.write_bytes(b"source")
-            with patch.dict("os.environ", {}, clear=True), patch("lecture_md.__main__.gemini_api_key", return_value=None), patch("lecture_md.__main__.extract_audio") as extractor:
+            with patch.dict("os.environ", {}, clear=True), patch("elearning_converter.__main__.gemini_api_key", return_value=None), patch("elearning_converter.__main__.extract_audio") as extractor:
                 self.assertEqual(run([str(source)]), 2)
                 extractor.assert_not_called()
 
@@ -152,14 +154,14 @@ class CoreTests(unittest.TestCase):
                 self.assertEqual(gemini_api_key(env_path), "environment-secret")
 
     def test_cli_uses_key_from_env_file(self):
-        part = {"summary": ["要点"], "body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "terms": [], "checks": []}
+        part = {"body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "checks": []}
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / "日本語 講義.mp4"
             source.write_bytes(b"source")
             env_path = root / ".env"
             env_path.write_text("GEMINI_API_KEY=file-secret\n", encoding="utf-8")
-            with patch.dict("os.environ", {}, clear=True), patch("lecture_md.__main__.gemini_api_key", side_effect=lambda: gemini_api_key(env_path)), patch("lecture_md.__main__.extract_audio"), patch("lecture_md.__main__.transcribe", return_value=[Segment(0, 2, "本文")]), patch("lecture_md.__main__.generate_parts", return_value=[part]) as generate:
+            with patch.dict("os.environ", {}, clear=True), patch("elearning_converter.__main__.gemini_api_key", side_effect=lambda: gemini_api_key(env_path)), patch("elearning_converter.__main__.extract_audio"), patch("elearning_converter.__main__.transcribe", return_value=[Segment(0, 2, "本文")]), patch("elearning_converter.__main__.generate_parts", return_value=[part]) as generate:
                 self.assertEqual(run([str(source)]), 0)
                 self.assertEqual(generate.call_args.args[1], "file-secret")
             article = (root / "日本語 講義.md").read_text(encoding="utf-8")
@@ -167,10 +169,10 @@ class CoreTests(unittest.TestCase):
 
     def test_ffprobe_no_audio_and_missing_tools(self):
         source = Path("講義.mp4")
-        with patch("lecture_md.media.shutil.which", return_value=None):
+        with patch("elearning_converter.media.shutil.which", return_value=None):
             with self.assertRaises(MediaError):
                 extract_audio(source, Path("audio.wav"))
-        with patch("lecture_md.media.shutil.which", side_effect=["ffprobe", "ffmpeg"]), patch("lecture_md.media._run", return_value=SimpleNamespace(returncode=0, stdout='{"streams":[]}')):
+        with patch("elearning_converter.media.shutil.which", side_effect=["ffprobe", "ffmpeg"]), patch("elearning_converter.media._run", return_value=SimpleNamespace(returncode=0, stdout='{"streams":[]}')):
             with self.assertRaises(MediaError):
                 extract_audio(source, Path("audio.wav"))
 
@@ -179,26 +181,27 @@ class CoreTests(unittest.TestCase):
             root = Path(folder)
             source = root / "日本語 講義.mp4"
             source.write_bytes(b"source")
-            with patch.dict("os.environ", {}, clear=True), patch("lecture_md.__main__.extract_audio"), patch("lecture_md.__main__.transcribe", return_value=[Segment(0, 2, "本文")]):
+            with patch.dict("os.environ", {}, clear=True), patch("elearning_converter.__main__.extract_audio"), patch("elearning_converter.__main__.transcribe", return_value=[Segment(0, 2, "本文")]):
                 self.assertEqual(run([str(source), "--no-article"]), 0)
             self.assertTrue((root / "日本語 講義.transcript.md").exists())
-            with patch.dict("os.environ", {"GEMINI_API_KEY": "secret"}), patch("lecture_md.__main__.extract_audio"), patch("lecture_md.__main__.transcribe", return_value=[Segment(0, 2, "本文")]), patch("lecture_md.__main__.generate_parts", side_effect=ArticleError("API障害")):
+            with patch.dict("os.environ", {"GEMINI_API_KEY": "secret"}), patch("elearning_converter.__main__.extract_audio"), patch("elearning_converter.__main__.transcribe", return_value=[Segment(0, 2, "本文")]), patch("elearning_converter.__main__.generate_parts", side_effect=ArticleError("API障害")):
                 self.assertEqual(run([str(source), "--overwrite"]), 1)
             self.assertFalse((root / "日本語 講義.md").exists())
             self.assertIn("本文", (root / "日本語 講義.transcript.failed.md").read_text(encoding="utf-8"))
 
     def test_successful_article_writes_both_files(self):
-        part = {"summary": ["要点"], "body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "terms": ["用語"], "checks": []}
+        part = {"body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "checks": []}
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / "日本語 講義.mp4"
             source.write_bytes(b"source")
-            with patch.dict("os.environ", {"GEMINI_API_KEY": "secret"}), patch("lecture_md.__main__.extract_audio"), patch("lecture_md.__main__.transcribe", return_value=[Segment(0, 2, "本文")]), patch("lecture_md.__main__.generate_parts", return_value=[part]):
+            with patch.dict("os.environ", {"GEMINI_API_KEY": "secret"}), patch("elearning_converter.__main__.extract_audio"), patch("elearning_converter.__main__.transcribe", return_value=[Segment(0, 2, "本文")]), patch("elearning_converter.__main__.generate_parts", return_value=[part]):
                 self.assertEqual(run([str(source)]), 0)
             article = (root / "日本語 講義.md").read_text(encoding="utf-8")
             transcript = (root / "日本語 講義.transcript.md").read_text(encoding="utf-8")
-            self.assertIn("## 要点", article)
-            self.assertIn("### 内容 [00:00:00]", article)
+            self.assertNotIn("## 要点", article)
+            self.assertIn("## 内容", article)
+            self.assertIn("説明 [00:00:00]", article)
             self.assertIn("[00:00:00] 本文", transcript)
             self.assertNotIn("secret", article + transcript)
 

@@ -4,11 +4,11 @@ __pycache__/
 .venv/
 *.egg-info/
 .pytest_cache/
+.test-tmp/
 *.mp4
 *.wav
 *.transcript.md
 *.transcript.failed.md
 
 .env
-/docs/**
 AGENTS.md
