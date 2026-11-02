@@ -15,6 +15,40 @@ class ArticleError(Exception):
 LIMIT = 12_000
 TIME_RE = re.compile(r"^\d{2,}:[0-5]\d:[0-5]\d$")
 PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "article.md"
+ARTICLE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "body": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "heading": {"type": "string", "description": "見出し不要なら空文字。null不可"},
+                    "text": {"type": "string", "description": "空でない授業ノートのMarkdown本文"},
+                    "timestamp": {"type": "string", "description": "根拠の開始時刻HH:MM:SS（例00:01:23）"},
+                },
+                "required": ["heading", "text", "timestamp"],
+                "additionalProperties": False,
+            },
+        },
+        "checks": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["body", "checks"],
+    "additionalProperties": False,
+}
+
+# Only known API enum values may appear in diagnostics. Never echo arbitrary values.
+FINISH_REASONS = frozenset({
+    "STOP", "MAX_TOKENS", "SAFETY", "RECITATION", "LANGUAGE", "OTHER",
+    "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "MALFORMED_FUNCTION_CALL",
+    "IMAGE_SAFETY", "UNEXPECTED_TOOL_CALL", "IMAGE_PROHIBITED_CONTENT",
+    "NO_IMAGE", "IMAGE_RECITATION", "IMAGE_OTHER", "FINISH_REASON_UNSPECIFIED",
+})
+BLOCK_REASONS = frozenset({
+    "SAFETY", "OTHER", "BLOCKLIST", "PROHIBITED_CONTENT", "IMAGE_SAFETY",
+    "MODEL_ARMOR", "JAILBREAK", "BLOCKED_REASON_UNSPECIFIED",
+})
 
 
 def _api_failure(exc: Exception) -> tuple[str, bool]:
@@ -53,24 +87,58 @@ def split_segments(segments: list[Segment], limit: int = LIMIT) -> list[str]:
 
 def validate_part(value: object) -> dict:
     if not isinstance(value, dict) or set(value) != {"body", "checks"}:
-        raise ArticleError("APIの記事形式が不正です。")
+        raise ArticleError("トップレベルはbody・checksのみのオブジェクトが必要です")
     items = value["checks"]
     if not isinstance(items, list) or any(not isinstance(item, str) or not item.strip() for item in items):
-        raise ArticleError("APIの記事形式が不正です。")
+        raise ArticleError("checksは空でない文字列の配列が必要です（空配列可）")
     if not isinstance(value["body"], list):
-        raise ArticleError("APIの記事形式が不正です。")
+        raise ArticleError("bodyは配列が必要です")
     if not value["body"]:
-        raise ArticleError("APIの記事が空です。")
+        raise ArticleError("bodyが空です")
     for item in value["body"]:
         if not isinstance(item, dict) or set(item) != {"heading", "text", "timestamp"}:
-            raise ArticleError("APIの記事形式が不正です。")
+            raise ArticleError("bodyの各要素にheading・text・timestampが必要です")
         if not isinstance(item["heading"], str):
-            raise ArticleError("APIの記事形式が不正です。")
+            raise ArticleError("headingは文字列が必要です（空文字可）")
         if any(not isinstance(item[k], str) or not item[k].strip() for k in ("text", "timestamp")):
-            raise ArticleError("APIの記事形式が不正です。")
+            raise ArticleError("text・timestampは空でない文字列が必要です")
         if not TIME_RE.fullmatch(item["timestamp"]):
-            raise ArticleError("APIの記事時刻が不正です。")
+            raise ArticleError("timestampはHH:MM:SS形式が必要です（分・秒は00～59）")
     return value
+
+
+def _known_reason(value: object, allowed: frozenset[str]) -> str | None:
+    value = getattr(value, "value", value)
+    if value is None:
+        return None
+    return value if isinstance(value, str) and value in allowed else "UNKNOWN"
+
+
+def parse_response(response: object, index: int, total: int) -> dict:
+    context = f"分割 {index}/{total}"
+    feedback = getattr(response, "prompt_feedback", None)
+    blocked = _known_reason(getattr(feedback, "block_reason", None), BLOCK_REASONS)
+    if blocked not in (None, "BLOCKED_REASON_UNSPECIFIED"):
+        raise ArticleError(f"Gemini APIの記事生成がブロックされました（{context}、block_reason={blocked}）。")
+    candidates = getattr(response, "candidates", None)
+    finish = _known_reason(getattr(candidates[0], "finish_reason", None), FINISH_REASONS) if candidates else None
+    if finish not in (None, "STOP", "FINISH_REASON_UNSPECIFIED"):
+        raise ArticleError(f"Gemini APIの記事生成が完了しませんでした（{context}、finish_reason={finish}）。")
+    try:
+        content = response.text
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ArticleError(f"Gemini APIの記事本文を取得できません（{context}）。") from exc
+    if not isinstance(content, str) or not content.strip():
+        raise ArticleError(f"Gemini APIの記事応答が空です（{context}）。")
+    try:
+        value = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ArticleError(f"Gemini APIの記事JSONが構文不正です（{context}、行 {exc.lineno}、列 {exc.colno}）。") from exc
+    try:
+        return validate_part(value)
+    except ArticleError as exc:
+        # validate_part only emits fixed descriptions, never model content.
+        raise ArticleError(f"Gemini APIの記事形式が不正です（{context}、{exc}）。") from exc
 
 
 def load_prompt() -> str:
@@ -94,14 +162,15 @@ def generate_parts(segments: list[Segment], api_key: str, model_name: str,
     except Exception as exc:
         raise ArticleError("Geminiクライアントを開始できません。") from exc
     parts = []
-    for chunk in split_segments(segments):
+    chunks = split_segments(segments)
+    for index, chunk in enumerate(chunks, start=1):
         response = None
         for attempt in range(3):
             try:
                 response = client.models.generate_content(
                     model=model_name,
                     contents=prompt + chunk,
-                    config={"response_mime_type": "application/json"},
+                    config={"response_mime_type": "application/json", "response_json_schema": ARTICLE_SCHEMA},
                 )
                 break
             except Exception as exc:
@@ -109,10 +178,6 @@ def generate_parts(segments: list[Segment], api_key: str, model_name: str,
                 if not retryable or attempt == 2:
                     raise ArticleError(f"Gemini APIの呼び出しに失敗しました（{detail}）。") from exc
                 pause(2 ** attempt)
-        try:
-            content = response.text
-            part = validate_part(json.loads(content))
-        except (ValueError, TypeError, AttributeError, ArticleError) as exc:
-            raise ArticleError("Gemini APIの記事応答が空か形式不正です。") from exc
+        part = parse_response(response, index, len(chunks))
         parts.append(part)
     return parts

@@ -21,6 +21,8 @@ API例外の `code` は数値HTTPステータスとして100～599に限って�
 
 ## テスト計画
 
+応答堅牢化（R-17 / A-17 / T-23）：article.pyにJSON Schemaと応答解析関数を追加する。分割数はsplit_segmentsを一度実行して取得。解析前にprompt_feedback.block_reasonとcandidates[0].finish_reasonを確認し、既知値だけ診断へ採用する。JSONDecodeErrorの生メッセージを出さず行・列だけ表示。validate_partは固定の項目別理由を返し、分割番号を付けてCLIへ伝える。ブロック、打切り、空本文、構文、構造、時刻をSDK実オブジェクトとモックで検証し、正常JSONでもMAX_TOKENSなら拒否する。実API呼出しや応答保存は行わない。
+
 プロンプト外部化（R-16 / A-14 / T-20、T-22）：`article.py` の `load_prompt()` が `Path(__file__).resolve().parent.parent / "prompts" / "article.md"` を `utf-8-sig` で読み込む。空白のみの内容、`OSError`、`UnicodeError` は固定メッセージの `ArticleError` にする。`generate_parts()` 内でクライアント初期化前に一度読み、`contents=prompt + chunk` に使用する。モジュールimport時には読まないため `--no-article` に影響しない。プロンプトはR-04の授業ノート形式へ更新する。API設定・分割・再試行は維持する。ソース配置とREADMEの `pip install -e .` を対象とし、プロンプトはソースと一緒に配置する。
 
 | 層 | 確認 |
