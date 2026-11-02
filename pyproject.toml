@@ -12,5 +12,6 @@ dependencies = ["faster-whisper>=1.1,<2", "google-genai>=1,<2"]
 [project.scripts]
 elconv = "elearning_converter.__main__:run"
 
-[tool.setuptools.packages.find]
-include = ["elearning_converter*"]
+[tool.setuptools]
+packages = ["elearning_converter"]
+package-dir = {elearning_converter = "src"}

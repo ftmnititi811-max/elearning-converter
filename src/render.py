@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from .transcribe import Segment
 
 
@@ -14,17 +15,24 @@ def transcript_markdown(source: Path, segments: list[Segment]) -> str:
 
 
 def article_markdown(source: Path, parts: list[dict]) -> str:
-    lines = [f"# {source.stem}", "", "> 自動生成した復習用下書きです。原音声と時刻付き原文で内容を確認してください。", "", "## 要点", ""]
-    for part in parts:
-        lines.extend(f"- {item}" for item in part["summary"])
-    lines += ["", "## 本文", ""]
+    lines = [f"# {source.stem}", "", "> 自動生成の復習用下書き — 原音声・時刻付き原文と要照合", ""]
+    previous_heading = None
     for part in parts:
         for body in part["body"]:
-            lines += [f"### {body['heading']} [{body['timestamp']}]", "", body["text"], ""]
-    lines += ["## 用語", ""]
-    for part in parts:
-        lines.extend(f"- {item}" for item in part["terms"])
-    lines += ["", "## 要確認事項", ""]
-    checks = [item for part in parts for item in part["checks"]]
-    lines.extend(f"- {item}" for item in checks or ["特記事項なし。原音声との照合は必要です。"])
+            heading = body["heading"].strip()
+            if heading and heading != previous_heading:
+                lines += [f"## {heading}", ""]
+                previous_heading = heading
+            text = body["text"].strip()
+            reference = f"[{body['timestamp']}]"
+            # Keep references out of Markdown tables, lists, and fenced code.
+            if re.search(r"(?m)^\s*(?:\||[-+*] |\d+[.)] |`{3}|~{3}|>)", text):
+                lines += [text, "", reference, ""]
+            else:
+                lines += [f"{text} {reference}", ""]
+    checks = list(dict.fromkeys(item.strip() for part in parts for item in part["checks"]))
+    if checks:
+        lines += ["---", "", "**原文で確認する箇所**", ""]
+        lines.extend(f"- {item}" for item in checks)
+        lines.append("")
     return "\n".join(lines) + "\n"

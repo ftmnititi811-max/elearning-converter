@@ -6,6 +6,10 @@
 
 利用権限のあるMP4講義の**音声のみ**を、Windows上で復習用Markdownに変換するCLIです。FFmpegで音声を一時WAVへ抽出し、faster-whisperでローカル文字起こしを行います。通常モードでは、**時刻付き文字起こしテキストのみ**をGemini APIへ送って記事化します。MP4・WAVはAPIに送信しません。
 
+出力は講義の流れに沿う授業ノートです。用語を本文中で説明し、理解に必要な前提・理由・具体例を残します。「講義では〜紹介された」などの前置きや重複を省き、見出し・表は整理に役立つ場合だけ使用します。段落末などの不要な句読点を減らし、意味の区切りに必要な句読点は保持します。固定の要点・用語一覧は作りません。本文には根拠時刻を付け、不明点がある場合は末尾の「原文で確認する箇所」にまとめます。
+
+架空の内容を使った[出力例](docs/note-example.md)と[要件](docs/requirements.md)を参照できます。
+
 
 ## 導入（Windows 11、Python 3.11以降）
 
@@ -40,10 +44,18 @@ elconv "C:\講義 資料\授業.mp4" --output-dir "C:\復習 ノート"
 
 オプション: `--language`（既定 `ja`）、`--whisper-model`（既定 `small`、CPU/int8）、`--article-model`（既定 `gemini-3.5-flash-lite`）、`--output-dir`、`--no-article`、`--overwrite`。`elconv --help` でも確認できます。終了コードは成功0、入力・設定不備2、処理失敗1です。
 
+## ノートの書き方を調整する
+
+[prompts/article.md](prompts/article.md)をUTF-8で編集すると、次の記事化から反映されます。ファイルは記事化開始時に一度読み込み、各分割へ同じ指示を付けます。別の作業ディレクトリから起動しても、プロジェクト直下のファイルを参照します。JSONのbody・checksとbody内のheading・text・timestampの指定、および末尾の「文字起こし:」を維持してください。
+
+ファイルが欠落・読取不能・不正なUTF-8・空白のみの場合はAPIを呼ばずに記事化を失敗させ、時刻付き原文を救済します。`--no-article`ではプロンプトを読みません。現状はリポジトリを手元に置くeditable install（`pip install -e .`）を対象とし、wheelだけの配布には対応していません。
+
 
 ## 送信・費用・権利
 
 Gemini APIには、文字起こしテキストを約12,000文字ごとの時刻境界で分割して送ります。分割数だけAPIリクエストが発生し、従量課金やクォータ消費の可能性があります。**料金上限はCLIで設定しません。** 利用前に使用モデルの料金・クォータを確認してください。通信なしで使う場合は `--no-article` を指定します。
+
+分割結果はローカルで結合し、ノート全体をまとめ直すAPIは呼びません。プロンプトの長さと生成文量に応じてトークン使用量・料金は変動します。
 
 既定モデル `gemini-3.5-flash-lite` の料金と利用条件は [Gemini API公式料金表](https://ai.google.dev/gemini-api/docs/pricing) と [モデル仕様](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite) で確認してください。モデルを変える場合は `--article-model MODEL` を指定します。
 

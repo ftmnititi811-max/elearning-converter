@@ -52,8 +52,10 @@ class CoreTests(unittest.TestCase):
                 output.setsampwidth(2)
                 output.setframerate(16000)
                 output.writeframes(bytes(32000))
-            with self.assertRaisesRegex(TranscriptionError, "文字起こし結果が空です"):
-                transcribe(wav_path, "ja", "small")
+            model = SimpleNamespace(transcribe=lambda samples, **kwargs: ([], None))
+            with patch("faster_whisper.WhisperModel", return_value=model), patch("faster_whisper.audio.decode_audio", side_effect=AssertionError("PyAV must not be used")):
+                with self.assertRaisesRegex(TranscriptionError, "文字起こし結果が空です"):
+                    transcribe(wav_path, "ja", "small")
 
     def test_split_keeps_timestamps(self):
         chunks = split_segments([Segment(0, 1, "あ" * 15), Segment(2, 3, "い" * 15)], limit=20)
@@ -78,7 +80,7 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(output.read_text(encoding="utf-8"), "new")
 
     def test_gemini_request_retries_without_key_in_text(self):
-        payload = {"summary": ["要点"], "body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "terms": [], "checks": []}
+        payload = {"body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "checks": []}
         calls = []
 
         def generate_content(**kwargs):
@@ -152,7 +154,7 @@ class CoreTests(unittest.TestCase):
                 self.assertEqual(gemini_api_key(env_path), "environment-secret")
 
     def test_cli_uses_key_from_env_file(self):
-        part = {"summary": ["要点"], "body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "terms": [], "checks": []}
+        part = {"body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "checks": []}
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / "日本語 講義.mp4"
@@ -188,7 +190,7 @@ class CoreTests(unittest.TestCase):
             self.assertIn("本文", (root / "日本語 講義.transcript.failed.md").read_text(encoding="utf-8"))
 
     def test_successful_article_writes_both_files(self):
-        part = {"summary": ["要点"], "body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "terms": ["用語"], "checks": []}
+        part = {"body": [{"heading": "内容", "text": "説明", "timestamp": "00:00:00"}], "checks": []}
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / "日本語 講義.mp4"
@@ -197,8 +199,9 @@ class CoreTests(unittest.TestCase):
                 self.assertEqual(run([str(source)]), 0)
             article = (root / "日本語 講義.md").read_text(encoding="utf-8")
             transcript = (root / "日本語 講義.transcript.md").read_text(encoding="utf-8")
-            self.assertIn("## 要点", article)
-            self.assertIn("### 内容 [00:00:00]", article)
+            self.assertNotIn("## 要点", article)
+            self.assertIn("## 内容", article)
+            self.assertIn("説明 [00:00:00]", article)
             self.assertIn("[00:00:00] 本文", transcript)
             self.assertNotIn("secret", article + transcript)
 
