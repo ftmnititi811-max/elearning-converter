@@ -9,6 +9,7 @@ from .media import MediaError, extract_audio
 from .output import OutputError, write_atomic
 from .render import article_markdown, transcript_markdown
 from .transcribe import TranscriptionError, transcribe
+from .transcript_input import read_transcript
 
 
 def parser() -> argparse.ArgumentParser:
@@ -16,7 +17,8 @@ def parser() -> argparse.ArgumentParser:
         prog="elconv",
         description="elearning-converter: 許可済みMP4の音声を復習用Markdownへ変換します。記事化時は文字起こしテキストをGemini APIへ送信し、従量課金の可能性があります。",
     )
-    result.add_argument("input", type=Path, metavar="INPUT.mp4")
+    result.add_argument("input", type=Path, metavar="INPUT")
+    result.add_argument("--from-transcript", action="store_true", help="既存の .transcript.md / .transcript.failed.md から記事のみ生成（音声処理を省略）")
     result.add_argument("--output-dir", type=Path, help="出力先（既定: MP4と同じフォルダ）")
     result.add_argument("--language", default="ja", help="認識言語（既定: ja）")
     result.add_argument("--whisper-model", default="small", help="faster-whisperモデル（既定: small）")
@@ -28,6 +30,8 @@ def parser() -> argparse.ArgumentParser:
 
 def run(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.from_transcript:
+        return run_from_transcript(args)
     settings = Settings(args.input, args.output_dir or args.input.parent, args.language,
                         args.whisper_model, args.article_model, args.no_article, args.overwrite)
     try:
@@ -78,6 +82,37 @@ def run(argv: list[str] | None = None) -> int:
         return 1
     print(f"記事を保存しました: {settings.article_path}")
     print(f"原文を保存しました: {settings.transcript_path}")
+    return 0
+
+
+def run_from_transcript(args: argparse.Namespace) -> int:
+    try:
+        if args.no_article:
+            raise ConfigurationError("--from-transcript と --no-article は併用できません。")
+        stem, segments = read_transcript(args.input)
+        target = (args.output_dir or args.input.parent) / f"{stem}.md"
+        if target.resolve() == args.input.resolve() or (target.exists() and target.samefile(args.input)):
+            raise ConfigurationError("入力原文を出力先に指定できません。")
+        if target.exists() and (not args.overwrite or not target.is_file()):
+            raise ConfigurationError("既存出力があります。記事の更新には --overwrite を指定してください。")
+        if not args.article_model.strip():
+            raise ConfigurationError("記事モデル名は空にできません。")
+        api_key = gemini_api_key()
+        if not api_key:
+            raise ConfigurationError("GEMINI_API_KEY が設定されていません。")
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except (ConfigurationError, OSError) as exc:
+        message = str(exc) if isinstance(exc, ConfigurationError) else "入力または出力先を確認できません。"
+        print(f"設定エラー: {message}", file=sys.stderr)
+        return 2
+    print("既存の文字起こしテキストのみGemini APIへ送信して記事化します。従量課金の可能性があります。", file=sys.stderr)
+    try:
+        parts = generate_parts(segments, api_key, args.article_model)
+        write_atomic(target, article_markdown(target, parts), args.overwrite)
+    except (ArticleError, OutputError) as exc:
+        print(f"処理エラー: {exc}。入力原文は保持されています。", file=sys.stderr)
+        return 1
+    print(f"記事を保存しました: {target}")
     return 0
 
 
