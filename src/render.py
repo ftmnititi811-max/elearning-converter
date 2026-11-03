@@ -24,7 +24,7 @@ def article_markdown(source: Path, parts: list[dict]) -> str:
                 lines += [f"## {heading}", ""]
                 previous_heading = heading
             text = body["text"].strip()
-            reference = f"[{body['timestamp']}]"
+            reference = " ".join(f"[{time}]" for time in body.get("references", [body["timestamp"]]))
             # Keep references out of Markdown tables, lists, and fenced code.
             if re.search(r"(?m)^\s*(?:\||[-+*] |\d+[.)] |`{3}|~{3}|>)", text):
                 lines += [text, "", reference, ""]
