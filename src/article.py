@@ -114,7 +114,7 @@ def _known_reason(value: object, allowed: frozenset[str]) -> str | None:
     return value if isinstance(value, str) and value in allowed else "UNKNOWN"
 
 
-def parse_response(response: object, index: int, total: int) -> dict:
+def parse_response(response: object, index: int, total: int, validator=validate_part) -> dict:
     context = f"分割 {index}/{total}"
     feedback = getattr(response, "prompt_feedback", None)
     blocked = _known_reason(getattr(feedback, "block_reason", None), BLOCK_REASONS)
@@ -135,7 +135,7 @@ def parse_response(response: object, index: int, total: int) -> dict:
     except json.JSONDecodeError as exc:
         raise ArticleError(f"Gemini APIの記事JSONが構文不正です（{context}、行 {exc.lineno}、列 {exc.colno}）。") from exc
     try:
-        return validate_part(value)
+        return validator(value)
     except ArticleError as exc:
         # validate_part only emits fixed descriptions, never model content.
         raise ArticleError(f"Gemini APIの記事形式が不正です（{context}、{exc}）。") from exc

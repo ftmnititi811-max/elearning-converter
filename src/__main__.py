@@ -10,6 +10,7 @@ from .output import OutputError, write_atomic
 from .render import article_markdown, transcript_markdown
 from .transcribe import TranscriptionError, transcribe
 from .transcript_input import read_transcript
+from .quality import generate_quality
 
 
 def parser() -> argparse.ArgumentParser:
@@ -19,6 +20,7 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("input", type=Path, metavar="INPUT")
     result.add_argument("--from-transcript", action="store_true", help="既存の .transcript.md / .transcript.failed.md から記事のみ生成（音声処理を省略）")
+    result.add_argument("--quality-check", action="store_true", help="原文・生成ノート・重要事項・指摘をGeminiへ送り独立照合（通常2回、修正時4回/分割）。品質レポートを保存")
     result.add_argument("--output-dir", type=Path, help="出力先（既定: MP4と同じフォルダ）")
     result.add_argument("--language", default="ja", help="認識言語（既定: ja）")
     result.add_argument("--whisper-model", default="small", help="faster-whisperモデル（既定: small）")
@@ -30,6 +32,9 @@ def parser() -> argparse.ArgumentParser:
 
 def run(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.quality_check and args.no_article:
+        print("設定エラー: --quality-check と --no-article は併用できません。", file=sys.stderr)
+        return 2
     if args.from_transcript:
         return run_from_transcript(args)
     settings = Settings(args.input, args.output_dir or args.input.parent, args.language,
@@ -37,6 +42,9 @@ def run(argv: list[str] | None = None) -> int:
     try:
         api_key = None if settings.no_article else gemini_api_key()
         validate(settings, api_key)
+        if args.quality_check:
+            validate_quality_target(settings.article_path, args.input, args.overwrite,
+                                    [settings.transcript_path, settings.rescue_path])
     except ConfigurationError as exc:
         print(f"設定エラー: {exc}", file=sys.stderr)
         return 2
@@ -64,7 +72,7 @@ def run(argv: list[str] | None = None) -> int:
         return 0
     print("Gemini APIで記事化しています。文字起こしテキストのみ送信します。従量課金の可能性があります。", file=sys.stderr)
     try:
-        parts = generate_parts(segments, api_key, settings.article_model)
+        parts = selected_generation(args, segments, api_key, settings.article_path)
         article = article_markdown(settings.input_path, parts)
     except ArticleError as exc:
         print(f"処理エラー: {exc}", file=sys.stderr)
@@ -101,19 +109,47 @@ def run_from_transcript(args: argparse.Namespace) -> int:
         if not api_key:
             raise ConfigurationError("GEMINI_API_KEY が設定されていません。")
         target.parent.mkdir(parents=True, exist_ok=True)
+        if args.quality_check:
+            validate_quality_target(target, args.input, args.overwrite)
     except (ConfigurationError, OSError) as exc:
         message = str(exc) if isinstance(exc, ConfigurationError) else "入力または出力先を確認できません。"
         print(f"設定エラー: {message}", file=sys.stderr)
         return 2
     print("既存の文字起こしテキストのみGemini APIへ送信して記事化します。従量課金の可能性があります。", file=sys.stderr)
     try:
-        parts = generate_parts(segments, api_key, args.article_model)
+        parts = selected_generation(args, segments, api_key, target)
         write_atomic(target, article_markdown(target, parts), args.overwrite)
     except (ArticleError, OutputError) as exc:
         print(f"処理エラー: {exc}。入力原文は保持されています。", file=sys.stderr)
         return 1
     print(f"記事を保存しました: {target}")
     return 0
+
+
+def validate_quality_target(target, source, overwrite, other_outputs=()):
+    report = target.with_suffix(".quality.md")
+    try:
+        for protected in (source, target, *other_outputs):
+            if report.resolve() == protected.resolve() or (report.exists() and protected.exists() and report.samefile(protected)):
+                raise ConfigurationError("品質レポートが入力または他の出力と競合します。")
+        if report.exists() and (not overwrite or not report.is_file()):
+            raise ConfigurationError("品質レポートが既存です。更新には --overwrite が必要です。")
+    except OSError as exc:
+        raise ConfigurationError("品質レポートの出力先を確認できません。") from exc
+
+
+def selected_generation(args, segments, api_key, target):
+    if not args.quality_check:
+        return generate_parts(segments, api_key, args.article_model)
+    print("品質確認: 原文・生成ノート・重要事項・指摘をGeminiへ送信します。通常2回、修正時4回/分割（通信再試行別）。", file=sys.stderr)
+    result = generate_quality(segments, api_key, args.article_model)
+    try:
+        write_atomic(target.with_suffix(".quality.md"), result.markdown(api_key), args.overwrite)
+    except OutputError as exc:
+        raise ArticleError("品質レポートを保存できないため記事を確定しません。") from exc
+    if not result.accepted:
+        raise ArticleError("品質確認が未合格または処理失敗です。品質レポートを確認してください。")
+    return result.parts
 
 
 if __name__ == "__main__":
