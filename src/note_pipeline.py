@@ -4,7 +4,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from .article import ArticleError, LIMIT, _api_failure, load_prompt, parse_response
+from .article import ArticleError, LIMIT
 from .quality import QualityResult, object_schema
 from .render import timestamp
 
@@ -23,14 +23,8 @@ FACT_SCHEMA = object_schema({
     "status": {"type": "string", "enum": ["confirmed", "uncertain"]},
 })
 LEDGER_SCHEMA = object_schema({
-    "facts": array(FACT_SCHEMA, True),
+    "facts": array(FACT_SCHEMA),
     "excluded": array(object_schema({"source_id": STRING, "reason": STRING})),
-})
-NOTE_SCHEMA = object_schema({
-    "body": array(object_schema({"heading": STRING, "text": STRING,
-                                 "fact_ids": array(STRING, True),
-                                 "source_ids": array(STRING, True)}), True),
-    "checks": array(STRING),
 })
 AUDIT_SCHEMA = object_schema({"issues": array(object_schema({
     "severity": {"type": "string", "enum": ["major", "minor"]},
@@ -57,19 +51,13 @@ IDが全て存在しても意味の欠落はあり得る。重大な欠落・創
 軽微な問題はminor。不明部分を適切に留保しているだけなら問題にしない。
 issuesにはsource_idsと具体的な問題・修正方針textを返す。問題なしなら空配列。
 """
-WRITE = """固定したledgerとsourceから授業ノートを作る。台帳の追加・削除・変更は禁止。
-各bodyにheading/textと、反映したfact_ids、その全根拠source_idsを付ける。
-全factsを必ず本文に意味を保持して反映する。IDを添えるだけでは反映にならない。
-不確かな情報は本文でも留保し、checksに原文IDと時刻・確認事項を記す。
-本文の構成・文体は下記の書式指示に従い、応答の構造は今回のスキーマを優先する。
-"""
-AUDIT_NOTE = """原文とノートを双方向に照合する独立した照合者としてissuesを返す。
-sourceの必要事項が本文に残っているか、本文の各説明がsourceで裏付けられるかを確認。
-ledger自体の見落としも原文から確認する。IDだけ付けて意味を省くことは認めない。
-条件・順序・例・停止の欠落、数値変更、不明語の断定、創作、参照文脈の再掲、
-別概念の混同をmajor、軽微な文体問題をminorとする。適切な留保は問題にしない。
-各指摘にsource_idsと具体的な問題・修正方針textを付け、問題なしなら空配列。
-"""
+
+
+def context_source(source, before=False):
+    offset = max(0, len(source["text"]) - 600) if before else 0
+    text = source["text"][offset:offset+600]
+    return {**source, "text": text, "start_offset": source["start_offset"] + offset,
+            "end_offset": source["start_offset"] + offset + len(text)}
 
 
 def source_chunks(segments, limit=LIMIT):
@@ -86,18 +74,30 @@ def source_chunks(segments, limit=LIMIT):
                             "timestamp": timestamp(segment.start_seconds),
                             "start_offset": offset, "end_offset": offset + len(text), "text": text})
     ranges = []
-    start, size = 0, 0
-    for index, source in enumerate(sources):
-        cost = len(source["text"]) + 64
-        if index > start and size + cost > limit:
-            ranges.append((start, index))
-            start, size = index, 0
-        size += cost
-    if sources:
-        ranges.append((start, len(sources)))
+    start = 0
+    while start < len(sources):
+        end, size, candidates = start, 0, []
+        while end < len(sources) and size + len(sources[end]["text"]) + 64 <= limit:
+            size += len(sources[end]["text"]) + 64
+            end += 1
+            if end < len(sources) and size >= limit * .8:
+                previous, following = sources[end-1], sources[end]
+                topic = bool(re.match(r"\s*(?:次に|続いて|さて|ここから|一方|では次|別の話題)", following["text"]))
+                sentence = previous["text"].rstrip().endswith(("。", "！", "？", ".", "!", "?"))
+                def seconds(value):
+                    h, m, s = map(int, value.split(":"))
+                    return h * 3600 + m * 60 + s
+                pause = seconds(following["timestamp"]) - seconds(previous["timestamp"]) >= 5
+                priority = 3 if topic else 2 if sentence else 1 if pause else 0
+                if priority:
+                    candidates.append((priority, end))
+        if end < len(sources) and candidates:
+            end = max(candidates)[1]
+        ranges.append((start, end))
+        start = end
     return [{"source": sources[start:end],
-             "before": [{**s, "text": s["text"][:600]} for s in sources[max(0, start-2):start]],
-             "after": [{**s, "text": s["text"][:600]} for s in sources[end:end+2]]}
+             "before": [context_source(s, before=True) for s in sources[max(0, start-2):start]],
+             "after": [context_source(s) for s in sources[end:end+2]]}
             for start, end in ranges]
 
 
@@ -124,7 +124,7 @@ def ids(value, allowed):
 
 def validate_ledger(value, allowed):
     shape(value, ("facts", "excluded"))
-    if not isinstance(value["facts"], list) or not value["facts"] or not isinstance(value["excluded"], list):
+    if not isinstance(value["facts"], list) or not isinstance(value["excluded"], list):
         fail()
     fact_ids, covered, excluded = set(), set(), set()
     for fact in value["facts"]:
@@ -193,88 +193,8 @@ class PipelineResult(QualityResult):
         return text.replace(secret, "[REDACTED]") if secret else text
 
 
-def generate_pipeline(segments, api_key, model_name, client_factory=None, pause=time.sleep):
-    result = PipelineResult(model_name)
-    try:
-        prompt = load_prompt()
-        chunks = source_chunks(segments)
-        if not chunks:
-            raise ArticleError("台帳方式の入力が空です")
-        try:
-            if client_factory is None:
-                from google import genai
-                client_factory = genai.Client
-            client = client_factory(api_key=api_key)
-        except Exception as exc:
-            raise ArticleError("Geminiクライアントを開始できません。") from exc
-
-        def call(instruction, data, schema, validator, index, stage):
-            result.calls += 1
-            for attempt in range(3):
-                result.attempts += 1
-                try:
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=POLICY + instruction + "\n資料JSON:\n" + json.dumps(data, ensure_ascii=False),
-                        config={"response_mime_type": "application/json", "response_json_schema": schema})
-                    break
-                except Exception as exc:
-                    detail, retryable = _api_failure(exc)
-                    if not retryable or attempt == 2:
-                        raise ArticleError(f"台帳方式API呼出し失敗（工程={stage}、{detail}）。") from exc
-                    pause(2 ** attempt)
-            try:
-                return parse_response(response, index, len(chunks), validator)
-            except ArticleError as exc:
-                raise ArticleError(f"台帳方式の応答失敗（工程={stage}）：{exc}") from exc
-
-        for index, chunk in enumerate(chunks, 1):
-            sources = {s["id"]: s for s in chunk["source"]}
-            ledger = call(EXTRACT, chunk, LEDGER_SCHEMA,
-                          lambda v: validate_ledger(v, sources), index, "情報抽出")
-            record = {"sources": [{k: v for k, v in s.items() if k != "text"} for s in sources.values()],
-                      "ledger": ledger, "body_mapping": []}
-            result.ledgers.append(record)
-            reviews = {}
-            result.reviews.append(reviews)
-
-            def audit(instruction, data, stage):
-                response = call(instruction, data, AUDIT_SCHEMA,
-                                lambda v: validate_audit(v, sources), index, stage)
-                reviews[stage] = [{"severity": issue["severity"],
-                                   "timestamp": sources[issue["source_ids"][0]]["timestamp"],
-                                   "text": ", ".join(issue["source_ids"]) + " " + issue["text"]}
-                                  for issue in response["issues"]]
-                return response
-
-            data = {**chunk, "ledger": ledger}
-            ledger_review = audit(AUDIT_LEDGER, data, "台帳照合")
-            if any(i["severity"] == "major" for i in ledger_review["issues"]):
-                raise ArticleError("台帳に重大な問題があるため記事は保存しません。")
-            note = call(WRITE + prompt, data, NOTE_SCHEMA,
-                        lambda v: validate_note(v, ledger, sources), index, "本文生成")
-
-            def remember_mapping():
-                record["body_mapping"] = [{"body": n, "fact_ids": b["fact_ids"], "source_ids": b["source_ids"]}
-                                          for n, b in enumerate(note["body"], 1)]
-
-            remember_mapping()
-            review = audit(AUDIT_NOTE, {**data, "note": note}, "本文照合")
-            if review["issues"]:
-                note = call(WRITE + "指摘箇所だけ修正し、他の情報も保持する。\n" + prompt,
-                            {**data, "note": note, **review}, NOTE_SCHEMA,
-                            lambda v: validate_note(v, ledger, sources), index, "本文修正")
-                remember_mapping()
-                review = audit(AUDIT_NOTE, {**data, "note": note}, "本文再照合")
-            if any(i["severity"] == "major" for i in review["issues"]):
-                raise ArticleError("本文に重大な問題が残るため記事は保存しません。")
-            body = []
-            for item in note["body"]:
-                references = list(dict.fromkeys(s["timestamp"] for s in sources.values() if s["id"] in item["source_ids"]))
-                body.append({"heading": item["heading"], "text": item["text"],
-                             "timestamp": references[0], "references": references})
-            result.parts.append({"body": body, "checks": note["checks"]})
-        result.accepted = True
-    except ArticleError as exc:
-        result.error = str(exc)
-    return result
+def generate_pipeline(segments, api_key, model_name, client_factory=None, pause=time.sleep,
+                      max_calls=100, progress=None):
+    # Lazy import keeps the schemas and validation helpers reusable without a cycle.
+    from .note_workflow import generate_workflow
+    return generate_workflow(segments, api_key, model_name, client_factory, pause, max_calls, progress)

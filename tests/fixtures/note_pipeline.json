@@ -1,45 +1,343 @@
 {
   "description": "評価用に作成した架空講義。実教材・個人情報を含まない",
   "segments": [
-    {"start": 1, "text": "入力は0以上の整数n。残数rをn、回数cを0にする"},
-    {"start": 1, "text": "最初にrを表示する。rが0より大きい間だけ次の操作を繰り返す"},
-    {"start": 15, "text": "まず古いrをtに保存し、rをt-1にしてからcを1増やす"},
-    {"start": 25, "text": "rが0になったら終了し、cを表示する"},
-    {"start": 35, "text": "nが2なら最初の表示は2。更新後はr=1,c=1、次はr=0,c=2となり、最後の表示は2。nが0なら反復せず最初も最後も0を表示する"},
-    {"start": 50, "text": "この配置は『らく配置』という名前です。同じ用途の箱を近くに置きます。名称の認識は不確かです"},
-    {"start": 60, "text": "ええと、はい"}
+    {
+      "start": 1,
+      "text": "入力は0以上の整数n。残数rをn、回数cを0にする"
+    },
+    {
+      "start": 1,
+      "text": "最初にrを表示する。rが0より大きい間だけ次の操作を繰り返す"
+    },
+    {
+      "start": 15,
+      "text": "まず古いrをtに保存し、rをt-1にしてからcを1増やす"
+    },
+    {
+      "start": 25,
+      "text": "rが0になったら終了し、cを表示する"
+    },
+    {
+      "start": 35,
+      "text": "nが2なら最初の表示は2。更新後はr=1,c=1、次はr=0,c=2となり、最後の表示は2。nが0なら反復せず最初も最後も0を表示する"
+    },
+    {
+      "start": 50,
+      "text": "この配置は『らく配置』という名前です。同じ用途の箱を近くに置きます。名称の認識は不確かです"
+    },
+    {
+      "start": 60,
+      "text": "ええと、はい"
+    }
   ],
   "expected": [
-    {"id": "F001", "criterion": "入力範囲とr=n,c=0", "source_ids": ["S000001P0001"]},
-    {"id": "F002", "criterion": "初回表示とr>0の比較条件", "source_ids": ["S000002P0001"]},
-    {"id": "F003", "criterion": "tへの退避→r更新→c更新の順序", "source_ids": ["S000003P0001"]},
-    {"id": "F004", "criterion": "停止条件と最終出力", "source_ids": ["S000004P0001"]},
-    {"id": "F005", "criterion": "n=2の更新過程とn=0の無反復", "source_ids": ["S000005P0001"]},
-    {"id": "F006", "criterion": "箱の配置の説明を保持し、名称は断定しない", "source_ids": ["S000006P0001"]}
+    {
+      "id": "F001",
+      "criterion": "入力範囲とr=n,c=0",
+      "source_ids": [
+        "S000001P0001"
+      ]
+    },
+    {
+      "id": "F002",
+      "criterion": "初回表示とr>0の比較条件",
+      "source_ids": [
+        "S000002P0001"
+      ]
+    },
+    {
+      "id": "F003",
+      "criterion": "tへの退避→r更新→c更新の順序",
+      "source_ids": [
+        "S000003P0001"
+      ]
+    },
+    {
+      "id": "F004",
+      "criterion": "停止条件と最終出力",
+      "source_ids": [
+        "S000004P0001"
+      ]
+    },
+    {
+      "id": "F005",
+      "criterion": "n=2の更新過程とn=0の無反復",
+      "source_ids": [
+        "S000005P0001"
+      ]
+    },
+    {
+      "id": "F006",
+      "criterion": "箱の配置の説明を保持し、名称は断定しない",
+      "source_ids": [
+        "S000006P0001"
+      ]
+    }
   ],
   "ledger": {
     "facts": [
-      {"id": "F001", "kind": "premise", "text": "入力は0以上の整数n、r=n、c=0", "source_ids": ["S000001P0001"], "status": "confirmed"},
-      {"id": "F002", "kind": "condition", "text": "初めにrを表示し、r>0の間だけ反復する", "source_ids": ["S000002P0001"], "status": "confirmed"},
-      {"id": "F003", "kind": "procedure", "text": "t=r、r=t-1、cを1増やす順に更新する", "source_ids": ["S000003P0001"], "status": "confirmed"},
-      {"id": "F004", "kind": "condition", "text": "r=0で終了しcを表示する", "source_ids": ["S000004P0001"], "status": "confirmed"},
-      {"id": "F005", "kind": "example", "text": "n=2は初回表示2、r/cが1/1→0/2、最後2。n=0は反復せず両表示0", "source_ids": ["S000005P0001"], "status": "confirmed"},
-      {"id": "F006", "kind": "definition", "text": "同じ用途の箱を近くに置く。配置の名称は要確認", "source_ids": ["S000006P0001"], "status": "uncertain"}
+      {
+        "id": "F001",
+        "kind": "premise",
+        "text": "入力は0以上の整数n、r=n、c=0",
+        "source_ids": [
+          "S000001P0001"
+        ],
+        "status": "confirmed"
+      },
+      {
+        "id": "F002",
+        "kind": "condition",
+        "text": "初めにrを表示し、r>0の間だけ反復する",
+        "source_ids": [
+          "S000002P0001"
+        ],
+        "status": "confirmed"
+      },
+      {
+        "id": "F003",
+        "kind": "procedure",
+        "text": "t=r、r=t-1、cを1増やす順に更新する",
+        "source_ids": [
+          "S000003P0001"
+        ],
+        "status": "confirmed"
+      },
+      {
+        "id": "F004",
+        "kind": "condition",
+        "text": "r=0で終了しcを表示する",
+        "source_ids": [
+          "S000004P0001"
+        ],
+        "status": "confirmed"
+      },
+      {
+        "id": "F005",
+        "kind": "example",
+        "text": "n=2は初回表示2、r/cが1/1→0/2、最後2。n=0は反復せず両表示0",
+        "source_ids": [
+          "S000005P0001"
+        ],
+        "status": "confirmed"
+      },
+      {
+        "id": "F006",
+        "kind": "definition",
+        "text": "同じ用途の箱を近くに置く。配置の名称は要確認",
+        "source_ids": [
+          "S000006P0001"
+        ],
+        "status": "uncertain"
+      }
     ],
-    "excluded": [{"source_id": "S000007P0001", "reason": "フィラーのみ"}]
+    "excluded": [
+      {
+        "source_id": "S000007P0001",
+        "reason": "フィラーのみ"
+      }
+    ]
   },
   "note": {
     "body": [
-      {"heading": "残数を数える手順", "text": "入力は0以上の整数n。r=n、c=0から始め、最初にrを表示する\n\n1. r>0の間だけ反復する\n2. tに古いrを保存する\n3. rをt-1にする\n4. cを1増やす\n\nr=0で終了し、cを表示する", "fact_ids": ["F001", "F002", "F003", "F004"], "source_ids": ["S000001P0001", "S000002P0001", "S000003P0001", "S000004P0001"]},
-      {"heading": "", "text": "n=2なら最初に2を表示する\n\n| 状態 | r | c |\n| --- | --- | --- |\n| 初期 | 2 | 0 |\n| 1回後 | 1 | 1 |\n| 2回後 | 0 | 2 |\n\n最後にcの2を表示する。n=0なら反復せず、最初も最後も0を表示する", "fact_ids": ["F005"], "source_ids": ["S000005P0001"]},
-      {"heading": "箱の配置", "text": "同じ用途の箱を近くに置く。配置の名称は要確認", "fact_ids": ["F006"], "source_ids": ["S000006P0001"]}
+      {
+        "heading": "残数を数える手順",
+        "text": "入力は0以上の整数n。r=n、c=0から始め、最初にrを表示する\n\n1. r>0の間だけ反復する\n2. tに古いrを保存する\n3. rをt-1にする\n4. cを1増やす\n\nr=0で終了し、cを表示する",
+        "fact_ids": [
+          "F001",
+          "F002",
+          "F003",
+          "F004"
+        ],
+        "source_ids": [
+          "S000001P0001",
+          "S000002P0001",
+          "S000003P0001",
+          "S000004P0001"
+        ]
+      },
+      {
+        "heading": "",
+        "text": "n=2なら最初に2を表示する\n\n| 状態 | r | c |\n| --- | --- | --- |\n| 初期 | 2 | 0 |\n| 1回後 | 1 | 1 |\n| 2回後 | 0 | 2 |\n\n最後にcの2を表示する。n=0なら反復せず、最初も最後も0を表示する",
+        "fact_ids": [
+          "F005"
+        ],
+        "source_ids": [
+          "S000005P0001"
+        ]
+      },
+      {
+        "heading": "箱の配置",
+        "text": "同じ用途の箱を近くに置く。配置の名称は要確認",
+        "fact_ids": [
+          "F006"
+        ],
+        "source_ids": [
+          "S000006P0001"
+        ]
+      }
     ],
-    "checks": ["S000006P0001 [00:00:50] 『らく配置』という認識語の正式名称を音声で確認する"]
+    "checks": [
+      "S000006P0001 [00:00:50] 『らく配置』という認識語の正式名称を音声で確認する"
+    ]
   },
   "degradations": [
-    {"name": "具体例の構造的欠落", "operation": "remove_body", "body_index": 1, "expected_missing": ["F005"], "local_reject": true, "expected_issue": "n=2とn=0の具体例が未掲載"},
-    {"name": "IDを残した概要化", "operation": "replace_text", "body_index": 0, "text": "変数を初期化し、繰り返し更新して結果を出す", "local_reject": false, "expected_issue": "初期値・初回表示・条件・退避・更新順・停止が欠落"},
-    {"name": "不明語の断定", "operation": "replace_text", "body_index": 2, "text": "らく配置とは同じ用途の箱を近くに置く正式な配置方式である", "local_reject": false, "expected_issue": "名称を確定事項として断定"},
-    {"name": "原文にない値への変更", "operation": "replace_text", "body_index": 0, "text": "入力は0以上の整数n。r=n、c=1で開始し、rが1になったら停止する", "local_reject": false, "expected_issue": "初期値と停止条件の変更、手順欠落"}
-  ]
+    {
+      "name": "具体例の構造的欠落",
+      "operation": "remove_body",
+      "body_index": 1,
+      "expected_missing": [
+        "F005"
+      ],
+      "local_reject": true,
+      "expected_issue": "n=2とn=0の具体例が未掲載"
+    },
+    {
+      "name": "IDを残した概要化",
+      "operation": "replace_text",
+      "body_index": 0,
+      "text": "変数を初期化し、繰り返し更新して結果を出す",
+      "local_reject": false,
+      "expected_issue": "初期値・初回表示・条件・退避・更新順・停止が欠落"
+    },
+    {
+      "name": "不明語の断定",
+      "operation": "replace_text",
+      "body_index": 2,
+      "text": "らく配置とは同じ用途の箱を近くに置く正式な配置方式である",
+      "local_reject": false,
+      "expected_issue": "名称を確定事項として断定"
+    },
+    {
+      "name": "原文にない値への変更",
+      "operation": "replace_text",
+      "body_index": 0,
+      "text": "入力は0以上の整数n。r=n、c=1で開始し、rが1になったら停止する",
+      "local_reject": false,
+      "expected_issue": "初期値と停止条件の変更、手順欠落"
+    }
+  ],
+  "structured_note": {
+    "blocks": [
+      {
+        "kind": "paragraph",
+        "text": "入力は0以上の整数n。r=n、c=0から始め、最初にrを表示する",
+        "items": [],
+        "columns": [],
+        "rows": [],
+        "language": "",
+        "fact_ids": [
+          "C0001.F001",
+          "C0001.F002"
+        ],
+        "source_ids": [
+          "S000001P0001",
+          "S000002P0001"
+        ]
+      },
+      {
+        "kind": "steps",
+        "text": "",
+        "items": [
+          "r>0の間だけ次の更新を繰り返す",
+          "古いrをtに保存する",
+          "rをt-1にする",
+          "cを1増やす",
+          "r=0になったら終了し、cを表示する"
+        ],
+        "columns": [],
+        "rows": [],
+        "language": "",
+        "fact_ids": [
+          "C0001.F002",
+          "C0001.F003",
+          "C0001.F004"
+        ],
+        "source_ids": [
+          "S000002P0001",
+          "S000003P0001",
+          "S000004P0001"
+        ]
+      },
+      {
+        "kind": "paragraph",
+        "text": "n=2では最初に2を表示する。変数は次のように変化し、最後にcの2を表示する",
+        "items": [],
+        "columns": [],
+        "rows": [],
+        "language": "",
+        "fact_ids": [
+          "C0001.F005"
+        ],
+        "source_ids": [
+          "S000005P0001"
+        ]
+      },
+      {
+        "kind": "table",
+        "text": "",
+        "items": [],
+        "columns": [
+          "状態",
+          "r",
+          "c"
+        ],
+        "rows": [
+          [
+            "初期",
+            "2",
+            "0"
+          ],
+          [
+            "1回後",
+            "1",
+            "1"
+          ],
+          [
+            "2回後",
+            "0",
+            "2"
+          ]
+        ],
+        "language": "",
+        "fact_ids": [
+          "C0001.F005"
+        ],
+        "source_ids": [
+          "S000005P0001"
+        ]
+      },
+      {
+        "kind": "paragraph",
+        "text": "n=0なら反復せず、最初も最後も0を表示する",
+        "items": [],
+        "columns": [],
+        "rows": [],
+        "language": "",
+        "fact_ids": [
+          "C0001.F005"
+        ],
+        "source_ids": [
+          "S000005P0001"
+        ]
+      },
+      {
+        "kind": "paragraph",
+        "text": "同じ用途の箱を近くに置く。配置の名称は要確認",
+        "items": [],
+        "columns": [],
+        "rows": [],
+        "language": "",
+        "fact_ids": [
+          "C0001.F006"
+        ],
+        "source_ids": [
+          "S000006P0001"
+        ]
+      }
+    ],
+    "checks": [
+      "S000006P0001 [00:00:50] 『らく配置』という認識語の正式名称を音声で確認する"
+    ]
+  }
 }

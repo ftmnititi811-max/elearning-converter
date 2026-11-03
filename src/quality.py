@@ -122,7 +122,7 @@ class QualityResult:
                  "記事保存: このレポートは記事確定前の記録。保存結果はCLIの終了結果を確認してください。",
                  "モデルによる照合であり、原音声への忠実性を保証しません。", ""]
         for i, record in enumerate(self.reviews, 1):
-            lines += [f"## 分割 {i}", ""]
+            lines += [f"## {getattr(self, 'review_label', '分割')} {i}", ""]
             for stage, issues in record.items():
                 lines.append(f"### {stage}")
                 lines += [f"- {x['severity']} [{x['timestamp']}] {x['text']}" for x in issues] or ["- 指摘なし"]

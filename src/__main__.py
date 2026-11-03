@@ -23,7 +23,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--from-transcript", action="store_true", help="既存の .transcript.md / .transcript.failed.md から記事のみ生成（音声処理を省略）")
     modes = result.add_mutually_exclusive_group()
     modes.add_argument("--quality-check", action="store_true", help="原文・生成ノート・重要事項・指摘をGeminiへ送り独立照合（通常2回、修正時4回/分割）。品質レポートを保存")
-    modes.add_argument("--note-pipeline", action="store_true", help="情報台帳の抽出・照合後に本文を生成・照合（通常4回、最大6回/分割、通信再試行別）。台帳と対応を品質レポートに保存")
+    modes.add_argument("--note-pipeline", action="store_true", help="全台帳から章構成を計画し、構造化本文・境界を照合。台帳・対応・使用量を品質レポートに保存")
+    result.add_argument("--max-api-calls", type=int, help="台帳方式のAPI工程上限（既定100、通信再試行別）。料金上限ではありません")
     result.add_argument("--output-dir", type=Path, help="出力先（既定: MP4と同じフォルダ）")
     result.add_argument("--language", default="ja", help="認識言語（既定: ja）")
     result.add_argument("--whisper-model", default="small", help="faster-whisperモデル（既定: small）")
@@ -35,6 +36,9 @@ def parser() -> argparse.ArgumentParser:
 
 def run(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.max_api_calls is not None and (not args.note_pipeline or args.max_api_calls < 1):
+        print("設定エラー: --max-api-calls は --note-pipeline と併用し、正の整数を指定してください。", file=sys.stderr)
+        return 2
     if (args.quality_check or args.note_pipeline) and args.no_article:
         print("設定エラー: 品質確認・台帳方式と --no-article は併用できません。", file=sys.stderr)
         return 2
@@ -145,8 +149,10 @@ def selected_generation(args, segments, api_key, target):
     if not args.quality_check and not args.note_pipeline:
         return generate_parts(segments, api_key, args.article_model)
     if args.note_pipeline:
-        print("台帳方式: 原文・情報台帳・本文・指摘をGeminiへ送信します。通常4回、最大6回/分割（通信再試行別）。台帳と本文対応を品質レポートに保存します。", file=sys.stderr)
-        result = generate_pipeline(segments, api_key, args.article_model)
+        print("台帳方式: 原文・台帳・章構成・本文・指摘をGeminiへ送信します。工程数は章構成に依存し、通信は各工程最大3試行。使用量と対応を品質レポートに保存します。", file=sys.stderr)
+        result = generate_pipeline(segments, api_key, args.article_model,
+                                   max_calls=args.max_api_calls or 100,
+                                   progress=lambda message: print(message, file=sys.stderr))
     else:
         print("品質確認: 原文・生成ノート・重要事項・指摘をGeminiへ送信します。通常2回、修正時4回/分割（通信再試行別）。", file=sys.stderr)
         result = generate_quality(segments, api_key, args.article_model)
