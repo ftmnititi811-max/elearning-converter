@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -24,6 +25,33 @@ def part(*body, checks=None):
 
 
 class NoteTests(unittest.TestCase):
+    def test_fidelity_example_through_real_prompt_parser_and_renderer(self):
+        # Authored expectations exercise the plumbing, not model generation quality.
+        example = (Path(__file__).resolve().parents[1] / "docs" / "note-fidelity-example.md").read_text(encoding="utf-8")
+        transcript = re.search(r"```text\n(.*?)\n```", example, re.S).group(1)
+        expected = json.loads(re.search(r"```json\n(.*?)\n```", example, re.S).group(1))
+        segments = []
+        for line in transcript.splitlines():
+            time, text = line[1:].split("] ", 1)
+            hours, minutes, seconds = map(int, time.split(":"))
+            start = hours * 3600 + minutes * 60 + seconds
+            segments.append(Segment(start, start + 1, text))
+        generate = Mock(return_value=SimpleNamespace(text=json.dumps(expected)))
+        factory = Mock(return_value=SimpleNamespace(models=SimpleNamespace(generate_content=generate)))
+        parts = generate_parts(segments, "test-token", "test-model", client_factory=factory)
+        generate.assert_called_once()
+        self.assertEqual(generate.call_args.kwargs["contents"], load_prompt() + transcript)
+        self.assertEqual(parts, [expected])
+        rendered = article_markdown(Path("架空 残数処理.mp4"), parts)
+        for body in expected["body"]:
+            self.assertIn(body["text"], rendered)
+            self.assertIn(f"[{body['timestamp']}]", rendered)
+        for check in expected["checks"]:
+            self.assertIn("- " + check, rendered)
+        self.assertIn("```\n\n[00:00:35]", rendered)
+        self.assertNotIn("[00:00:00]", rendered)
+        self.assertEqual(rendered.count("## 箱の残数処理"), 1)
+
     def test_optional_headings_and_consecutive_merge_preserve_all_content(self):
         parts = [part(paragraph(), paragraph("箱の整理", "**ラベル**は中身を示す名前", "00:00:02")),
                  part(paragraph("箱の整理", "名前には用途を含める", "00:00:03"),
