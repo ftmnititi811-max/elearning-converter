@@ -24,6 +24,7 @@ from elearning_converter.transcribe import Segment
 from elearning_converter.note_blocks import STRUCTURED_SCHEMA
 from elearning_converter.note_blocks import block_markdown, validate_block
 from elearning_converter.note_structure import PLAN_SCHEMA, drafting_jobs, job_data, validate_plan
+from elearning_converter.note_workflow import ledger_schema, note_schema
 
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'note_pipeline.json'
@@ -144,7 +145,8 @@ class PipelineTests(unittest.TestCase):
                                            client_factory=lambda **kwargs: client)
         self.assertTrue(result.accepted, result.error)
         self.assertEqual([r['generationConfig']['responseJsonSchema'] for r in requests],
-                         [LEDGER_SCHEMA, AUDIT_SCHEMA, PLAN_SCHEMA, STRUCTURED_SCHEMA, AUDIT_SCHEMA])
+                         [ledger_schema(self.sources), AUDIT_SCHEMA, PLAN_SCHEMA,
+                          note_schema(self.plan['sections'][0]['fact_ids'], [s for s in self.sources if s != 'S000007P0001']), AUDIT_SCHEMA])
         self.assertNotIn('not-a-real-key', json.dumps(requests))
 
     def test_ledger_rejects_unprocessed_sources_unknown_duplicate_and_invalid_types(self):
@@ -507,6 +509,55 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('本文対象の情報がありません', result.error)
         self.assertEqual(generate.call_count, 2)
 
+    def test_quota_stops_at_each_stage_without_application_retry(self):
+        class QuotaError(Exception):
+            code = 429
+        normal = self.normal()
+        for index in range(len(normal)):
+            factory, generate = self.factory(normal[:index] + [QuotaError('private')])
+            pause = Mock()
+            result = generate_pipeline(self.segments, 'test-secret', 'test-model', factory, pause)
+            self.assertFalse(result.accepted)
+            self.assertEqual((result.calls, result.attempts, generate.call_count), (index+1, index+1, index+1))
+            self.assertIn('HTTP 429', result.error)
+            self.assertNotIn('private', result.markdown('test-secret'))
+            pause.assert_not_called()
+
+    def test_real_sdk_does_not_retry_quota_response(self):
+        requests = []
+        def handle(request):
+            requests.append(True)
+            return httpx.Response(429, json={'error': {'code': 429, 'message': 'private', 'status': 'RESOURCE_EXHAUSTED'}})
+        with httpx.Client(transport=httpx.MockTransport(handle)) as transport:
+            with genai.Client(api_key='not-a-real-key', http_options=types.HttpOptions(httpx_client=transport)) as client:
+                pause = Mock()
+                result = generate_pipeline(self.segments, 'not-a-real-key', 'test-model',
+                                           client_factory=lambda **kwargs: client, pause=pause)
+        self.assertFalse(result.accepted)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(result.attempts, 1)
+        self.assertNotIn('private', result.error)
+        pause.assert_not_called()
+
+    def test_dynamic_id_schemas_are_isolated_and_diagnostics_are_safe(self):
+        first = ledger_schema(['S1'])
+        second = ledger_schema(['S2'])
+        self.assertEqual(first['properties']['facts']['items']['properties']['source_ids']['items']['enum'], ['S1'])
+        self.assertEqual(second['properties']['excluded']['items']['properties']['source_id']['enum'], ['S2'])
+        self.assertNotIn('enum', LEDGER_SCHEMA['properties']['facts']['items']['properties']['source_ids']['items'])
+        for mutate, expected in (
+            (lambda v: v['body'][0].update(fact_ids=['private']), '許可されていないID'),
+            (lambda v: v['body'][0].update(fact_ids=['F001', 'F001']), '重複'),
+            (lambda v: v['body'][0].update(source_ids=['S000001P0001']), '根拠ID集合'),
+            (lambda v: v['body'].pop(), '本文の対応がありません'),
+        ):
+            note = copy.deepcopy(self.note)
+            mutate(note)
+            with self.assertRaises(ArticleError) as caught:
+                validate_note(note, self.ledger, self.sources)
+            self.assertIn(expected, str(caught.exception))
+            self.assertNotIn('private', str(caught.exception))
+
     def test_actual_long_input_crosses_windows_then_jobs_then_seams(self):
         segments = [Segment(i * 10, i * 10, '架空の説明' * 600) for i in range(8)]
         requests = []
@@ -514,13 +565,13 @@ class PipelineTests(unittest.TestCase):
             data = json.loads(kwargs['contents'].split('資料JSON:\n')[1])
             schema = kwargs['config']['response_json_schema']
             requests.append((schema, data))
-            if schema == LEDGER_SCHEMA:
+            if 'excluded' in schema['properties']:
                 value = {'facts': [{'id': f'F{i:03d}', 'kind': 'definition', 'text': '架空の説明',
                                     'source_ids': [s['id']], 'status': 'confirmed'}
                                    for i, s in enumerate(data['source'], 1)], 'excluded': []}
             elif schema == PLAN_SCHEMA:
                 value = {'sections': [{'heading': '全体をまとめた章', 'fact_ids': [f['id'] for f in data['facts']]}]}
-            elif schema == STRUCTURED_SCHEMA:
+            elif 'blocks' in schema['properties']:
                 blocks = []
                 for fact in data['ledger']['facts']:
                     block = self.block('架空の説明', [], fact['source_ids'])
@@ -547,5 +598,5 @@ class PipelineTests(unittest.TestCase):
         for i in range(8):
             self.assertIn(f'[{i*10//3600:02d}:{i*10//60%60:02d}:{i*10%60:02d}]', article)
         # No draft can happen while further extraction windows remain.
-        first_draft = next(i for i, (s, _) in enumerate(requests) if s == STRUCTURED_SCHEMA)
-        self.assertEqual(sum(s == LEDGER_SCHEMA for s, _ in requests[:first_draft]), windows)
+        first_draft = next(i for i, (s, _) in enumerate(requests) if 'blocks' in s['properties'])
+        self.assertEqual(sum('excluded' in s['properties'] for s, _ in requests[:first_draft]), windows)

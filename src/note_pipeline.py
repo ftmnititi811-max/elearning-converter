@@ -111,14 +111,16 @@ def is_text(value):
 
 def shape(value, keys):
     if not isinstance(value, dict) or set(value) != set(keys):
-        fail()
+        raise ArticleError("項目キーが仕様と一致しません")
 
 
 def ids(value, allowed):
-    if (not isinstance(value, list) or not value
-            or any(not isinstance(x, str) or x not in allowed for x in value)
-            or len(set(value)) != len(value)):
-        fail()
+    if not isinstance(value, list) or not value or any(not isinstance(x, str) for x in value):
+        raise ArticleError("ID配列の型または要素数が不正です")
+    if any(x not in allowed for x in value):
+        raise ArticleError("許可されていないIDが含まれます")
+    if len(set(value)) != len(value):
+        raise ArticleError("ID配列に重複があります")
     return set(value)
 
 
@@ -141,8 +143,10 @@ def validate_ledger(value, allowed):
                 or item["source_id"] in excluded or not is_text(item["reason"])):
             fail()
         excluded.add(item["source_id"])
-    if covered & excluded or covered | excluded != set(allowed):
-        fail()
+    if covered & excluded:
+        raise ArticleError("原文IDが情報根拠と除外理由の両方に含まれます")
+    if covered | excluded != set(allowed):
+        raise ArticleError("情報根拠にも除外理由にも対応しない原文IDが残っています")
     return value
 
 
@@ -160,10 +164,10 @@ def validate_note(value, ledger, allowed):
         selected = ids(body["fact_ids"], facts)
         evidence = ids(body["source_ids"], allowed)
         if evidence != {s for f in selected for s in facts[f]["source_ids"]}:
-            fail()
+            raise ArticleError("本文の根拠ID集合が対応情報の根拠集合と一致しません")
         used |= selected
     if used != set(facts):
-        fail()
+        raise ArticleError("必須の台帳情報に本文の対応がありません")
     return value
 
 

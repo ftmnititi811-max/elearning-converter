@@ -1,5 +1,6 @@
 """Audited ledgers -> global outline -> evidence-grounded blocks -> seam checks."""
 import json
+import copy
 import time
 from dataclasses import dataclass, field
 
@@ -39,6 +40,22 @@ SEAM = """隣接する2つの本文を原文と章構成に照らして独立に
 重大な問題はmajor、軽微ならminor。issuesに原文のsource_idsと具体的なtextを返す。
 """
 TOKEN_FIELDS = ("prompt_token_count", "candidates_token_count", "thoughts_token_count", "cached_content_token_count")
+
+
+def ledger_schema(source_ids):
+    schema = copy.deepcopy(LEDGER_SCHEMA)
+    props = schema["properties"]
+    props["facts"]["items"]["properties"]["source_ids"]["items"]["enum"] = list(source_ids)
+    props["excluded"]["items"]["properties"]["source_id"]["enum"] = list(source_ids)
+    return schema
+
+
+def note_schema(fact_ids, source_ids):
+    schema = copy.deepcopy(STRUCTURED_SCHEMA)
+    props = schema["properties"]["blocks"]["items"]["properties"]
+    props["fact_ids"]["items"]["enum"] = list(fact_ids)
+    props["source_ids"]["items"]["enum"] = list(source_ids)
+    return schema
 
 
 @dataclass
@@ -85,7 +102,8 @@ class Runner:
             try:
                 response = self.client.models.generate_content(
                     model=self.model, contents=POLICY + instruction + "\n資料JSON:\n" + json.dumps(data, ensure_ascii=False),
-                    config={"response_mime_type": "application/json", "response_json_schema": schema})
+                    config={"response_mime_type": "application/json", "response_json_schema": schema,
+                            "http_options": {"retry_options": {"attempts": 1}}})
                 entry["received"] = True
                 usage = getattr(response, "usage_metadata", None)
                 for key in TOKEN_FIELDS:
@@ -95,6 +113,8 @@ class Runner:
                 break
             except Exception as exc:
                 detail, retryable = _api_failure(exc)
+                if getattr(exc, "code", None) == 429:
+                    raise ArticleError("無料枠・レート制限に達したため追加送信せず停止します（HTTP 429）。") from exc
                 if not retryable or attempt == 2:
                     raise ArticleError(f"台帳方式API呼出し失敗（工程={stage}、{detail}）。") from exc
             finally:
@@ -142,7 +162,7 @@ def generate_workflow(segments, api_key, model_name, client_factory=None, pause=
         for index, chunk in enumerate(chunks, 1):
             core = {s["id"]: s for s in chunk["source"]}
             sources.update(core)
-            ledger = runner.call(EXTRACT, chunk, LEDGER_SCHEMA,
+            ledger = runner.call(EXTRACT, chunk, ledger_schema(core),
                                  lambda v: validate_ledger(v, core), index, len(chunks), "情報抽出")
             record = {"sources": [{k: v for k, v in s.items() if k != "text"} for s in core.values()],
                       "ledger": ledger}
@@ -167,8 +187,9 @@ def generate_workflow(segments, api_key, model_name, client_factory=None, pause=
             # Only headings/IDs are needed as global context during drafting.
             data.update({"outline": result.plan, "target": job})
             validator = lambda v: validate_structured(v, data["ledger"], core)
+            schema = note_schema(job["fact_ids"], core)
             instruction = WRITE + prompt + BLOCK_INSTRUCTIONS
-            note = runner.call(instruction, data, STRUCTURED_SCHEMA, validator, index, len(jobs), "本文生成")
+            note = runner.call(instruction, data, schema, validator, index, len(jobs), "本文生成")
 
             def remember():
                 job["block_mapping"] = [{"block": n, "fact_ids": b["fact_ids"], "source_ids": b["source_ids"]}
@@ -178,7 +199,7 @@ def generate_workflow(segments, api_key, model_name, client_factory=None, pause=
             review = audit(REVIEW, {**data, "note": note}, core, index, len(jobs), "本文照合")
             if review["issues"]:
                 note = runner.call(instruction + "\n指摘箇所を修正し、他の対象情報も保持する。",
-                                   {**data, "note": note, **review}, STRUCTURED_SCHEMA, validator,
+                                   {**data, "note": note, **review}, schema, validator,
                                    index, len(jobs), "本文修正")
                 remember()
                 review = audit(REVIEW, {**data, "note": note}, core, index, len(jobs), "本文再照合")

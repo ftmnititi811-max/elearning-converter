@@ -3,6 +3,7 @@ import re
 
 from .note_pipeline import STRING, array, fail, is_text, shape, validate_note
 from .quality import object_schema
+from .article import ArticleError
 
 
 KINDS = ("paragraph", "bullets", "steps", "table", "code")
@@ -28,21 +29,21 @@ def validate_block(block):
     kind = block["kind"]
     if kind in ("paragraph", "code"):
         if not is_text(block["text"]) or block["items"] or block["columns"] or block["rows"]:
-            fail()
+            raise ArticleError("段落・コードの本文または未使用欄が不正です")
     elif block["text"]:
-        fail()
+        raise ArticleError("リスト・手順・表のtext欄は空文字が必要です")
     if kind in ("bullets", "steps"):
         if not block["items"] or any(not is_text(x) for x in block["items"]) or block["columns"] or block["rows"]:
-            fail()
+            raise ArticleError("リスト・手順のitemsまたは未使用欄が不正です")
     elif block["items"]:
-        fail()
+        raise ArticleError("このブロックのitems欄は空配列が必要です")
     if kind == "table":
         if (not block["columns"] or any(not is_text(x) for x in block["columns"]) or not block["rows"]
                 or any(not isinstance(row, list) or len(row) != len(block["columns"])
                        or any(not isinstance(cell, str) for cell in row) for row in block["rows"])):
-            fail()
+            raise ArticleError("表の見出し・行・列数が不正です")
     elif block["columns"] or block["rows"]:
-        fail()
+        raise ArticleError("表以外のcolumns・rows欄は空配列が必要です")
     if kind == "code":
         if not re.fullmatch(r"[A-Za-z0-9_+-]{0,32}", block["language"]):
             fail()
