@@ -12,3 +12,6 @@ __pycache__/
 
 .env
 AGENTS.md
+.codex
+
+learning_texts/

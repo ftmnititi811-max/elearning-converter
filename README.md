@@ -2,89 +2,81 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-## 機能
+**講義MP4の音声を、時刻付き原文と復習用Markdownへ変換するWindows向けPython CLI。**
 
-利用権限のあるMP4講義の**音声のみ**を、Windows上で復習用Markdownに変換するCLIです。FFmpegで音声を一時WAVへ抽出し、faster-whisperでローカル文字起こしを行います。通常モードでは、**時刻付き文字起こしテキストのみ**をGemini APIへ送って記事化します。MP4・WAVはAPIに送信しません。
+長い講義を見返す手間を減らし、説明・手順・具体例を原文と照合できる授業ノートを目指す個人開発プロジェクトです。音声処理はローカルで行い、ノート生成にはGemini APIを使います。
 
-出力は講義の流れに沿う授業ノートです。用語を本文中で説明し、理解に必要な前提・理由・具体例を残します。「講義では〜紹介された」などの前置きや重複を省き、見出し・表は整理に役立つ場合だけ使用します。段落末などの不要な句読点を減らし、意味の区切りに必要な句読点は保持します。固定の要点・用語一覧は作りません。本文には根拠時刻を付け、不明点がある場合は末尾の「原文で確認する箇所」にまとめます。
+[操作マニュアル](docs/guides/user-manual.md) · [設計](docs/design.md) · [検証記録](docs/verification.md) · [未解決問題](docs/issues/known-issues.md)
 
-架空の内容を使った[出力例](docs/note-example.md)と[要件](docs/requirements.md)を参照できます。
+## 出力のイメージ
 
+次は**架空の内容による期待する書式見本**です。実教材・実APIの生成結果ではありません。
 
-## 導入（Windows 11、Python 3.11以降）
+> 箱は外から中身が見えないため、開けて確認する手間がかかる。**ラベル**は中身を示す名前で、例えば文具を入れた箱に「文具」と書くと、開けずに用途が分かる [00:00:01]
+>
+> 同じ用途の箱をまとめると、探す場所を絞れる。ただし中身を入れ替えたら、ラベルも更新する必要がある [00:00:12]
 
-1. Python 3.11以降をインストールし、`py --version` で確認します。
-2. FFmpegとffprobeをインストールしてPATHに追加し、`ffmpeg -version` と `ffprobe -version` で確認します。
-3. PowerShellでこのフォルダに移動し、仮想環境とパッケージを用意します。
+本文には根拠時刻、不明箇所には確認事項を付けます。[見本の全文](docs/note-example.md)と[手順・具体例の情報保持の見本](docs/note-fidelity-example.md)も参照できます。
+
+## 処理の流れと実装上の工夫
+
+```mermaid
+flowchart LR
+    A[講義MP4] --> B[FFmpegで音声抽出]
+    B --> C[faster-whisperで文字起こし]
+    C --> D[時刻付き原文]
+    D --> E[Geminiでノート生成]
+    E --> F[構造検証・Markdown保存]
+```
+
+- **音声をローカルで処理**：FFmpegで16 kHzモノラルPCMへ変換し、NumPy配列としてfaster-whisperへ渡します。MP4/WAVはAPIに送りません。
+- **生成結果を検証して保存**：JSON Schemaとローカル検査を組み合わせ、不完全応答を記事として採用しません。上書き保護、原文救済、一時ファイルからの置換を実装しています。
+- **品質改善を工程に分離**：実験的な台帳方式では、情報抽出・独立照合・章構成・本文生成・境界照合を分け、根拠IDと本文の対応を検査します。段落・手順・表・コードはPythonで整形します。
+
+技術構成はPython 3.11以降、FFmpeg/ffprobe、faster-whisper、NumPy、Google Gen AI SDK。CLIとローカル保存を中心に構成しています。[設計の詳細](docs/design.md)
+
+## 実装・検証状況
+
+| 項目 | 状況 |
+| --- | --- |
+| 文字起こし・通常のノート生成・既存原文からの再生成 | 実装済み。認識・生成内容は原音声との照合が必要 |
+| 独立照合・限定修正を行う`--quality-check` | 実装済み。モデルの判定は品質の保証ではない |
+| 台帳方式の`--note-pipeline` | 実装済み・改善中。2026-11-04の実教材3本は形式不正・情報未掲載により記事未確定 |
+| オフライン検証 | 74件成功の記録あり。失敗処理、応答構造、保存保護等を確認。実生成品質の実証とは区別 |
+
+現在の重点課題は、台帳応答の安定化、必須情報の本文への反映、不明語・数式に対する判定の改善です。[未解決問題と次の検証](docs/issues/known-issues.md)にまとめています。映像・字幕・スライド解析、話者分離、GUI、一括処理は対象外です。
+
+## クイックスタート
+
+Windows 11、Python 3.11以降、PATHに登録済みのFFmpegとffprobeを用意し、PowerShellで実行します。初回のWhisperモデル取得にはネットワーク接続が必要な場合があります。
 
 ```powershell
+git clone https://github.com/ftmnititi811-max/elearning-converter.git
+cd elearning-converter
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-
-## 実行
-
-短縮コマンドは `elconv`（e-learning converter）です。仮想環境を有効にして使用します。`python -m elearning_converter` でも同じ処理を実行できます。
+まずAPIキー不要で、時刻付き原文を作成できます。
 
 ```powershell
-# APIを使わず、時刻付き原文のみ
-elconv "C:\講義 資料\授業.mp4" --no-article
+elconv "C:\講義 資料\授業.mp4" --no-article --output-dir "C:\復習 ノート"
+```
 
-# 記事と原文を生成。キーは環境変数で渡します
-$env:GEMINI_API_KEY = "取得したキー"
+Geminiでノートを作る場合は、[.env.example](.env.example)を参考にプロジェクト直下の`.env`へキーを設定します。`.env`はGit管理外です。実際のキーをコミットしないでください。
+
+```powershell
 elconv "C:\講義 資料\授業.mp4" --output-dir "C:\復習 ノート"
 ```
 
-[.env.example](.env.example) にキーの記入形式を示しています。プロジェクトルートの `.env` に `GEMINI_API_KEY=取得したキー` と書くと、CLIが自動で読み込みます。環境変数が設定されている場合はそちらを優先します。実際の `.env` はGitの管理対象から除外されています。
+成功すると`授業.md`と`授業.transcript.md`をUTF-8で保存します。既存ファイルは`--overwrite`を付けた場合のみ置換します。仮想環境を有効にできない場合の起動方法、環境変数でのキー設定、既存原文の利用は[操作マニュアル](docs/guides/user-manual.md)を参照してください。
 
-通常モードは `<stem>.md` と `<stem>.transcript.md` をUTF-8で保存します。`--no-article` は原文だけを保存し、キーは不要です。既存出力を置換する場合だけ `--overwrite` を付けます。記事化失敗時は、可能なら `<stem>.transcript.failed.md` に原文を救済して終了コード1で終了します。既存の救済ファイルも `--overwrite` なしでは置換しません。
+**利用前に確認すること**：教材の加工・API送信が許可されていること、使用モデルの料金・クォータを確認してください。通常方式は文字起こし、品質確認方式は派生したノート等も送信します。CLIは料金上限を保証しません。出力は復習用下書きとして原音声と照合してください。
 
-オプション: `--language`（既定 `ja`）、`--whisper-model`（既定 `small`、CPU/int8）、`--article-model`（既定 `gemini-3.5-flash-lite`）、`--output-dir`、`--no-article`、`--overwrite`。`elconv --help` でも確認できます。終了コードは成功0、入力・設定不備2、処理失敗1です。
+## 詳細情報
 
-## ノートの書き方を調整する
-
-[prompts/article.md](prompts/article.md)をUTF-8で編集すると、次の記事化から反映されます。ファイルは記事化開始時に一度読み込み、各分割へ同じ指示を付けます。別の作業ディレクトリから起動しても、プロジェクト直下のファイルを参照します。JSONのbody・checksとbody内のheading・text・timestampの指定、および末尾の「文字起こし:」を維持してください。
-
-ファイルが欠落・読取不能・不正なUTF-8・空白のみの場合はAPIを呼ばずに記事化を失敗させ、時刻付き原文を救済します。`--no-article`ではプロンプトを読みません。現状はリポジトリを手元に置くeditable install（`pip install -e .`）を対象とし、wheelだけの配布には対応していません。
-
-
-## 送信・費用・権利
-
-Gemini APIには、文字起こしテキストを約12,000文字ごとの時刻境界で分割して送ります。分割数だけAPIリクエストが発生し、従量課金やクォータ消費の可能性があります。**料金上限はCLIで設定しません。** 利用前に使用モデルの料金・クォータを確認してください。通信なしで使う場合は `--no-article` を指定します。
-
-分割結果はローカルで結合し、ノート全体をまとめ直すAPIは呼びません。プロンプトの長さと生成文量に応じてトークン使用量・料金は変動します。
-
-既定モデル `gemini-3.5-flash-lite` の料金と利用条件は [Gemini API公式料金表](https://ai.google.dev/gemini-api/docs/pricing) と [モデル仕様](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite) で確認してください。モデルを変える場合は `--article-model MODEL` を指定します。
-
-教材の加工・外部送信・共有が利用条件と著作権上許されているか確認してください。機密情報や個人情報を含む可能性がある場合、Geminiへ送る前に内容を確認してください。記事は自動生成した下書きです。専門語、数式、重要な断定は原音声と時刻付き原文で照合してください。キーや文字起こし本文をCLIログには表示しません。
-
-## トラブル対応
-
-- `FFmpegまたはffprobeが見つかりません`: 両コマンドがPATH上にあるか確認します。
-- `GEMINI_API_KEY が設定されていません`: プロジェクトルートの `.env` または同じPowerShellセッションの環境変数にキーを設定します。`--no-article` では不要です。
-- `文字起こし結果が空です`: 音声が聞こえるMP4か確認します。無音や短すぎる音声は失敗します。
-- `既存出力があります`: 別の出力先を選ぶか、更新を意図する場合のみ `--overwrite` を付けます。
-- Gemini障害・形式不正: 記事は完成名で保存されません。救済原文がある場合はそこから内容を確認できます。
-
-記事応答にはAPI設定でもJSON Schemaを指定し、受信後も構造を検証します（[Gemini公式の構造化出力](https://ai.google.dev/gemini-api/docs/generate-content/structured-output)）。応答が失敗した場合は分割番号と理由を表示します。本文やAPIの生のエラーメッセージは表示・保存しません。
-
-| 表示 | 意味 |
-| --- | --- |
-| `finish_reason=MAX_TOKENS` | 出力上限で生成が打ち切られた。不完全な記事は採用しない |
-| `block_reason=...` / `finish_reason=SAFETY`など | API側の入力ブロック・生成停止 |
-| 記事応答が空 | 本文テキストが返っていない |
-| JSONが構文不正、行・列 | JSONを解析できない。本文断片は表示しない |
-| 記事形式が不正、固定の項目名 | 必須項目・型・時刻形式が合っていない |
-
-形式不正の自動再送信は行いません。再発時は分割番号と理由のメッセージで切り分けできます。以前の「記事応答が空か形式不正」だけの記録からは、どの条件だったかを確定できません。
-
-## 開発・検証
-
-```powershell
-python -m unittest discover -s tests -v
-```
-
-自動テストは外部APIと講義素材を使わないモックです。権利確認済みの短尺日本語MP4と音声なしMP4を別途用意し、音声抽出・CPU認識・日本語/空白入りパスを確認してください。実APIテストは課金を伴うため明示的に実行してください。モデル、分割長、再試行回数は暫定値です。5～10分の素材で認識誤り、時刻、記事の忠実性、処理時間、API利用量を記録してから調整します。
+- [操作マニュアル](docs/guides/user-manual.md)：モード選択、全オプション、出力、失敗時の動作、費用、トラブル対応
+- [要件](docs/requirements.md)・[仕様](docs/spec.md)・[設計](docs/design.md)：目的、受入基準、実装の責任分担
+- [検証記録](docs/verification.md)・[実教材テスト手順](docs/user-material-test.md)：確認済みの範囲と再評価方法
+- [開発の進め方](docs/workflows/development-workflow.md)・[文書案内](docs/guides/documentation-map.md)：開発手順と参照先

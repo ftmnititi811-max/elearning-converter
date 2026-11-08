@@ -20,11 +20,12 @@ def article_markdown(source: Path, parts: list[dict]) -> str:
     for part in parts:
         for body in part["body"]:
             heading = body["heading"].strip()
-            if heading and heading != previous_heading:
+            heading_key = body.get("section_id", heading)
+            if heading and heading_key != previous_heading:
                 lines += [f"## {heading}", ""]
-                previous_heading = heading
+                previous_heading = heading_key
             text = body["text"].strip()
-            reference = f"[{body['timestamp']}]"
+            reference = " ".join(f"[{time}]" for time in body.get("references", [body["timestamp"]]))
             # Keep references out of Markdown tables, lists, and fenced code.
             if re.search(r"(?m)^\s*(?:\||[-+*] |\d+[.)] |`{3}|~{3}|>)", text):
                 lines += [text, "", reference, ""]
