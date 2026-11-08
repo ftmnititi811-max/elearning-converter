@@ -20,15 +20,17 @@ docs/
   workflows/
     development-workflow.md    開発と引渡しの運用
   guides/
+    user-manual.md            導入・全オプション・出力・トラブル対応
     documentation-map.md      この文書
 ```
 
-新規の管理文書を`issues`・`workflows`・`guides`に分類した。既存文書はREADME、AGENTS.md、相互リンクやテストから参照されているため、今回の整理では配置を維持する。READMEは利用者の編集予定に従い変更していない。
+管理文書を`issues`・`workflows`・`guides`に分類している。READMEは概要・検証状況・クイックスタートを担い、詳細操作はuser-manual.mdへ分けた。既存の要件・仕様等はREADME、AGENTS.md、相互リンクやテストから参照されているため配置を維持している。
 
 ## 目的から探す
 
 | 知りたいこと | 参照先 | 管理する情報 |
 | --- | --- | --- |
+| 導入・操作・エラー対応を詳しく知りたい | [操作マニュアル](user-manual.md) | モード選択、全オプション、出力、送信・使用量、トラブル対応 |
 | 何を満たすべきか | [要件](../requirements.md) | R番号、受入基準、利用条件 |
 | CLIや出力はどう動くか | [仕様](../spec.md) | オプション、応答構造、保存・失敗時の動作 |
 | どう実装するか | [設計](../design.md) | モジュールの責任、検証・生成・保存の設計 |
@@ -45,7 +47,7 @@ docs/
 
 | 場所 | 役割と注意 |
 | --- | --- |
-| [README](../../README.md) | 導入・基本的な実行方法。この整理では編集対象外 |
+| [README](../../README.md) | 概要、出力見本、実装上の工夫、検証状況、クイックスタート |
 | `AGENTS.md` | エージェント向けの作業ルール。ローカルのファイルはGit管理外 |
 | `.codex/GEMINI_POLICY.md` | 無料枠限定のGemini実行許可と停止条件。ローカル設定でありGit管理外 |
 | [prompts/article.md](../../prompts/article.md) | 外部化された記事化の文章方針。実際の送信方法は仕様・コードで確認する |
